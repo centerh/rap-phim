@@ -840,16 +840,50 @@ function removePlayer(id) {
   players.delete(id);
   dancers.delete(id); refreshMusic();
 }
-function showBubble(id, text) {
-  const p = players.get(id);
+// bong bóng chat nhiều dòng: hiện đủ nội dung, tự xuống dòng
+function bubbleSprite(text) {
+  const size = 38, maxW = 560, pad = 22, lh = size * 1.25;
+  const c = document.createElement('canvas'), ctx = c.getContext('2d');
+  ctx.font = `bold ${size}px sans-serif`;
+  const lines = [];
+  for (const para of String(text).split('\n')) {
+    let line = '';
+    for (const word of para.split(' ')) {
+      const test = line ? line + ' ' + word : word;
+      if (ctx.measureText(test).width <= maxW) { line = test; continue; }
+      if (line) { lines.push(line); line = ''; }
+      let w = word; // từ quá dài: cắt theo ký tự
+      while (ctx.measureText(w).width > maxW) {
+        let n = w.length;
+        while (n > 1 && ctx.measureText(w.slice(0, n)).width > maxW) n--;
+        lines.push(w.slice(0, n)); w = w.slice(n);
+      }
+      line = w;
+    }
+    lines.push(line);
+  }
+  const w = Math.min(maxW, Math.max(...lines.map((l) => ctx.measureText(l).width))) + pad * 2;
+  const h = lines.length * lh + pad * 2 - 6;
+  c.width = Math.ceil(w); c.height = Math.ceil(h) + 14;
+  ctx.font = `bold ${size}px sans-serif`;
+  ctx.fillStyle = 'rgba(255,255,255,.92)';
+  ctx.beginPath(); ctx.roundRect(0, 0, c.width, c.height - 14, 22); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(c.width / 2 - 14, c.height - 14); ctx.lineTo(c.width / 2, c.height - 1); ctx.lineTo(c.width / 2 + 14, c.height - 14); ctx.fill();
+  ctx.fillStyle = '#111'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  lines.forEach((l, i) => ctx.fillText(l, c.width / 2, pad + lh * i + lh / 2 - 3));
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  const k = 0.0085;
+  sp.scale.set(c.width * k, c.height * k, 1); sp.center.set(0.5, 0); sp.renderOrder = 11;
+  return sp;
+}
+function showBubble(id, text) {  const p = players.get(id);
   if (!p) return;
   if (p.bubble) { p.group.remove(p.bubble); clearTimeout(p.bubbleT); }
-  const short = text.length > 40 ? text.slice(0, 40) + '…' : text;
-  const b = textSprite(short, { size: 40, bg: 'rgba(255,255,255,.85)', color: '#111' });
-  b.material.opacity = 0.9;
-  b.position.set(0, 4.0, 0);
+  const b = bubbleSprite(text);
+  b.position.set(0, 3.8, 0);
   p.group.add(b); p.bubble = b;
-  p.bubbleT = setTimeout(() => { p.group.remove(b); if (p.bubble === b) p.bubble = null; }, 6000);
+  p.bubbleT = setTimeout(() => { p.group.remove(b); if (p.bubble === b) p.bubble = null; }, Math.min(16000, 6000 + text.length * 60));
 }
 
 /* ---------------- Networking ---------------- */
