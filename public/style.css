@@ -73,3 +73,16 @@ body.fs #scene { pointer-events: none; }
   padding: 8px 16px; border-radius: 20px; font-size: 14px; pointer-events: none; }
 
 #screenPanel { width: min(680px, 70vw); }
+
+.card { max-width: 920px !important; max-height: 96vh; overflow: auto; }
+.form { max-height: 74vh; overflow-y: auto; padding-right: 6px; scrollbar-width: thin; }
+.form .sec { font-weight: bold; color: #f1d27a; font-size: 13px; margin-top: 4px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button { padding: 6px 10px; font-size: 13px; border: 2px solid transparent; }
+.chips button.on { border-color: #e50914; background: #4a2a3a; }
+.chips.faces button { display: flex; flex-direction: column; align-items: center; min-width: 70px; font-size: 11px; }
+.chips.faces button span { font-size: 22px; }
+#emoteBar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 20; display: flex; gap: 4px; opacity: .55; transition: opacity .2s; }
+#emoteBar:hover { opacity: 1; }
+#emoteBar button { padding: 4px 7px; font-size: 20px; background: rgba(0,0,0,.45); }

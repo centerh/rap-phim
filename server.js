@@ -16,6 +16,7 @@ function getRoom(name) {
   if (!rooms.has(name)) rooms.set(name, { players: new Map(), chat: [], seats: new Map(), tables: {}, video: { id: 'dQw4w9WgXcQ', time: 0, playing: false, ts: Date.now() } });
   return rooms.get(name);
 }
+const FACES = ['happy', 'normal', 'surprised', 'sad', 'angry', 'wink', 'laugh'];
 const ITEM_KEYS = ['popcorn', 'caramel', 'coke', 'pepsi', 'orange', 'peach', 'milktea', 'water'];
 function freeSeats(room, id) {
   for (const [s, o] of room.seats) if (o === id) room.seats.delete(s);
@@ -55,6 +56,9 @@ io.on('connection', (socket) => {
         skin: clean(look && look.skin, 9), shirt: clean(look && look.shirt, 9), pants: clean(look && look.pants, 9),
         hair: clean(look && look.hair, 9),
         gender: look && look.gender === 'female' ? 'female' : 'male',
+        hairStyle: Math.min(5, Math.max(1, (look && look.hairStyle | 0) || 1)),
+        face: FACES.includes(look && look.face) ? look.face : 'normal',
+        jersey: ['blg', 'geng'].includes(look && look.jersey) ? look.jersey : '',
         texture: look && typeof look.texture === 'string' && look.texture.startsWith('data:image/') && look.texture.length < 600000 ? look.texture : null,
       },
       x: (Math.random() - 0.5) * 6, z: 6, ry: 0,
@@ -93,6 +97,14 @@ io.on('connection', (socket) => {
     if (!String(mime || '').startsWith('audio/')) return;
     p.lastVoice = now;
     socket.to(roomName).emit('voice', { id: socket.id, name: p.name, data: buf, mime: clean(mime, 40), dur: Math.min(10, Math.max(1, Math.round(+dur || 1))) });
+  });
+
+  socket.on('face', (f) => {
+    if (!room || !FACES.includes(f)) return;
+    const p = room.players.get(socket.id);
+    if (!p) return;
+    p.look.face = f;
+    io.to(roomName).emit('face', { id: socket.id, face: f });
   });
 
   socket.on('attack', ({ target, type }) => {

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 const $ = (id) => document.getElementById(id);
 const socket = io ? io() : null;
@@ -7,109 +8,284 @@ const socket = io ? io() : null;
 /* ---------------- Avatar ---------------- */
 const texLoader = new THREE.TextureLoader();
 
+const HAIR_NAMES = {
+  male: ['Xoăn nhẹ', 'Thẳng gọn', 'Rẽ ngôi', 'Undercut', 'Vuốt dựng'],
+  female: ['Xõa tự nhiên', 'Buộc 2 bên', 'Đuôi ngựa', 'Búi củ tỏi', 'Tết vương miện'],
+};
+const FACE_LIST = [
+  ['happy', '😄', 'Vui vẻ'], ['normal', '🙂', 'Bình thường'], ['surprised', '😮', 'Ngạc nhiên'], ['sad', '😢', 'Buồn'],
+  ['angry', '😠', 'Tức giận'], ['wink', '😉', 'Nháy mắt'], ['laugh', '😆', 'Cười lớn'],
+];
+
+/* ---- Áo thi đấu BLG / GEN.G (vẽ bằng canvas) ---- */
+const JERSEYS = {
+  blg: { base: '#f6f8ff', cuffL: '#4fb6e8', cuffR: '#f27ab0' },
+  geng: { base: '#14141a', cuffL: '#d4a72c', cuffR: '#d4a72c' },
+};
+const jerseyCache = {};
+function jerseyTexture(id, back) {
+  const key = id + (back ? '-b' : '-f');
+  if (jerseyCache[key]) return jerseyCache[key];
+  const c = document.createElement('canvas'); c.width = c.height = 512;
+  const x = c.getContext('2d');
+  const poly = (pts, col) => { x.beginPath(); pts.forEach(([a, b], i) => (i ? x.lineTo(a, b) : x.moveTo(a, b))); x.closePath(); x.fillStyle = col; x.fill(); };
+  const txt = (t, px, py, size, col, weight = '900', italic = true) => {
+    x.font = `${italic ? 'italic ' : ''}${weight} ${size}px Impact, "Arial Black", sans-serif`;
+    x.textAlign = 'center'; x.fillStyle = col; x.fillText(t, px, py);
+  };
+  if (id === 'blg') {
+    x.fillStyle = '#f6f8ff'; x.fillRect(0, 0, 512, 512);
+    // tia chớp xanh (trái) / hồng (phải)
+    poly([[0, 300], [70, 360], [40, 400], [110, 512], [20, 512], [0, 430]], '#4fb6e8');
+    poly([[512, 280], [440, 350], [470, 395], [400, 512], [500, 512], [512, 420]], '#f27ab0');
+    poly([[40, 430], [110, 512], [70, 512]], '#f27ab0'); poly([[470, 430], [400, 512], [440, 512]], '#4fb6e8');
+    // cổ chữ V
+    x.lineWidth = 22; x.lineJoin = 'round';
+    x.strokeStyle = '#4fb6e8'; x.beginPath(); x.moveTo(110, -10); x.lineTo(256, 130); x.stroke();
+    x.strokeStyle = '#f27ab0'; x.beginPath(); x.moveTo(402, -10); x.lineTo(256, 130); x.stroke();
+    if (!back) {
+      txt('BLG', 256, 330, 170, '#2f9fe0'); txt('BILIBILI GAMING', 256, 375, 30, '#2f9fe0', '700', false);
+      txt('bilibili', 150, 205, 34, '#27a5e8', '700'); txt('平安银行', 380, 205, 34, '#f26a21', '700', false);
+      txt('Logitech G', 100, 160, 22, '#555', '700', false);
+    } else {
+      txt('BLG', 256, 260, 120, '#2f9fe0');
+    }
+  } else {
+    x.fillStyle = '#14141a'; x.fillRect(0, 0, 512, 512);
+    poly([[0, 320], [80, 380], [50, 420], [120, 512], [10, 512], [0, 440]], '#d4a72c');
+    poly([[512, 300], [430, 370], [465, 410], [390, 512], [505, 512], [512, 430]], '#d4a72c');
+    poly([[135, 360], [175, 430], [150, 512], [120, 512]], '#f3f3f3');
+    poly([[380, 380], [350, 450], [380, 512], [405, 512]], '#f3f3f3');
+    x.lineWidth = 22; x.lineJoin = 'round'; x.strokeStyle = '#d4a72c';
+    x.beginPath(); x.moveTo(110, -10); x.lineTo(256, 130); x.lineTo(402, -10); x.stroke();
+    if (!back) {
+      // huy hiệu GG
+      x.fillStyle = '#d4a72c'; x.beginPath(); x.moveTo(220, 150); x.lineTo(292, 150); x.lineTo(292, 230); x.lineTo(256, 262); x.lineTo(220, 230); x.closePath(); x.fill();
+      x.fillStyle = '#14141a'; x.font = '900 52px Arial Black'; x.textAlign = 'center'; x.fillText('GG', 256, 222);
+      txt('GEN.G', 256, 345, 100, '#ffffff');
+      txt('PUMA', 170, 200, 30, '#fff', '900'); txt('LG UltraGear', 390, 190, 24, '#fff', '700', false);
+      x.fillStyle = '#6ac11a'; for (let i = 0; i < 3; i++) { x.fillRect(100 + i * 14, 110, 8, 46); }
+    } else {
+      txt('GEN.G', 256, 260, 100, '#d4a72c');
+    }
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return (jerseyCache[key] = t);
+}
+
+/* ---- Kiểu tóc ---- */
+function buildHair(g, style, female, hairM) {
+  const pinkM = new THREE.MeshLambertMaterial({ color: 0xff5c9a });
+  const S = (r, x, y, z, sx = 1, sy = 1, sz = 1, rx = 0, ry = 0, rz = 0, mat = hairM) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 14), mat);
+    m.position.set(x, y, z); m.scale.set(sx, sy, sz); m.rotation.set(rx, ry, rz); g.add(m); return m;
+  };
+  const cap = (r, th, y, z, rx) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 32, 20, 0, Math.PI * 2, 0, Math.PI * th), hairM);
+    m.position.set(0, y, z); m.rotation.x = rx; g.add(m);
+  };
+  const caps = (r, len, x, y, z, rz, mat = hairM) => {
+    const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 6, 12), mat);
+    m.position.set(x, y, z); m.rotation.z = rz; g.add(m); return m;
+  };
+  const ring = (R, t, x, y, z, rx, mat) => {
+    const m = new THREE.Mesh(new THREE.TorusGeometry(R, t, 8, 28), mat);
+    m.position.set(x, y, z); m.rotation.x = rx; g.add(m); return m;
+  };
+  const back = (r, y, z, sx, sy, sz) => S(r, 0, y, z, sx, sy, sz);
+
+  if (!female) {
+    if (style === 4) { cap(0.71, 0.42, 1.9, -0.04, -0.3); back(0.62, 1.95, -0.15, 1.05, 0.8, 0.8); }
+    else { cap(0.73, 0.5, 1.88, -0.04, -0.35); S(0.7, 0, 1.82, -0.1, 1, 0.9, 0.95).scale.set(1, 0.85, 0.95); }
+    if (style === 1) {
+      [[-0.45, 2.33, 0.38, 0.6], [-0.2, 2.4, 0.46, 0.3], [0.05, 2.42, 0.47, -0.2], [0.3, 2.38, 0.43, -0.5], [0.5, 2.28, 0.33, -0.8]]
+        .forEach(([x, y, z, rz]) => S(0.2, x, y, z, 1.25, 0.75, 0.8, 0, 0, rz));
+      S(0.22, -0.3, 2.62, 0.0, 1.2, 0.9, 1, 0, 0, 0.5); S(0.25, 0.02, 2.68, -0.05, 1.1, 1, 0.9); S(0.22, 0.32, 2.6, 0.05, 1.2, 0.9, 1, 0, 0, -0.5);
+      for (const s of [-1, 1]) S(0.2, s * 0.68, 2.08, -0.05, 0.9, 1.1, 1);
+    } else if (style === 2) {
+      S(0.3, 0.1, 2.3, 0.47, 1.9, 0.55, 0.7, 0, 0, -0.25); S(0.18, -0.4, 2.25, 0.4, 1, 0.8, 0.8, 0, 0, 0.5);
+      for (const s of [-1, 1]) S(0.11, s * 0.68, 1.9, 0.1, 0.8, 1.8, 0.8);
+    } else if (style === 3) {
+      S(0.28, -0.3, 2.3, 0.5, 1.25, 0.65, 0.7, 0, 0, 0.55); S(0.28, 0.3, 2.3, 0.5, 1.25, 0.65, 0.7, 0, 0, -0.55);
+      for (const s of [-1, 1]) S(0.12, s * 0.68, 1.92, 0.08, 0.8, 1.7, 0.8);
+    } else if (style === 4) {
+      S(0.32, 0, 2.52, 0.12, 1.3, 0.75, 1.5, -0.3); S(0.22, 0, 2.42, 0.48, 1.4, 0.7, 0.7, -0.5);
+    } else if (style === 5) {
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const m = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.5, 10), hairM);
+        m.position.set(Math.cos(a) * 0.36, 2.62, Math.sin(a) * 0.36 - 0.02);
+        m.rotation.z = -Math.cos(a) * 0.5; m.rotation.x = Math.sin(a) * 0.5; g.add(m);
+      }
+      for (const x of [-0.25, 0, 0.25]) { const m = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.4, 10), hairM); m.position.set(x, 2.45, 0.42); m.rotation.x = 0.7; g.add(m); }
+    }
+    // tai
+    return;
+  }
+  // ---- nữ ----
+  cap(0.73, 0.5, 1.88, -0.04, -0.35);
+  S(0.3, -0.28, 2.28, 0.5, 1.3, 0.65, 0.7, 0, 0, 0.5); S(0.3, 0.28, 2.28, 0.5, 1.3, 0.65, 0.7, 0, 0, -0.5); S(0.22, 0, 2.33, 0.52, 1.1, 0.6, 0.7);
+  if (style === 1) {
+    S(0.64, 0, 1.35, -0.4, 1.1, 1.45, 0.55);
+    for (const s of [-1, 1]) { caps(0.19, 0.7, s * 0.66, 1.35, -0.05, s * 0.08); S(0.17, s * 0.74, 2.12, 0, 1, 1, 1, 0, 0, 0, pinkM); }
+    S(0.24, 0, 2.62, -0.12);
+  } else if (style === 2) {
+    S(0.66, 0, 1.6, -0.35, 1.05, 0.9, 0.55);
+    for (const s of [-1, 1]) {
+      for (let k = 0; k < 5; k++) S(0.2 - k * 0.015, s * 0.72, 1.95 - k * 0.22, -0.1 + (k % 2 ? 0.05 : -0.03));
+      S(0.13, s * 0.72, 2.12, -0.05, 1, 1, 1, 0, 0, 0, pinkM); S(0.1, s * 0.72, 0.98, -0.1, 1, 1, 1, 0, 0, 0, pinkM);
+    }
+  } else if (style === 3) {
+    S(0.66, 0, 1.75, -0.3, 1.05, 0.85, 0.6);
+    const tail = caps(0.2, 0.9, 0, 1.95, -0.92, 0); tail.rotation.x = 0.55;
+    ring(0.2, 0.07, 0, 2.35, -0.66, 0.8, pinkM);
+    for (const s of [-1, 1]) caps(0.15, 0.3, s * 0.66, 1.75, -0.05, s * 0.08);
+  } else if (style === 4) {
+    S(0.66, 0, 1.55, -0.35, 1.05, 0.9, 0.55);
+    S(0.3, 0, 2.78, -0.08, 1, 1.15, 1); ring(0.26, 0.08, 0, 2.58, -0.08, Math.PI / 2, pinkM);
+    for (const s of [-1, 1]) caps(0.17, 0.35, s * 0.64, 1.65, -0.05, s * 0.06);
+  } else if (style === 5) {
+    S(0.64, 0, 1.3, -0.4, 1.1, 1.5, 0.55);
+    ring(0.7, 0.11, 0, 2.28, -0.02, Math.PI / 2 - 0.35, hairM);
+    for (const s of [-1, 1]) { caps(0.17, 0.7, s * 0.66, 1.4, -0.05, s * 0.08); S(0.13, s * 0.74, 1.95, 0, 1, 1, 1, 0, 0, 0, pinkM); }
+  }
+}
+
 function makeAvatar(look) {
   const g = new THREE.Group();
   const mk = (c) => new THREE.MeshLambertMaterial({ color: c });
-  const skin = mk(look.skin || '#f1c27d');
-  const shirt = mk(look.shirt || '#3a7bd5');
-  const pants = mk(look.pants || '#2d3436');
-  const hair = mk(look.hair || '#3b2a1a');
-  const mats = [skin, shirt, pants, hair];
   const female = look.gender === 'female';
+  const jersey = JERSEYS[look.jersey] ? look.jersey : '';
+  const J = jersey ? JERSEYS[jersey] : null;
+  const skin = mk(look.skin || '#f2c394');
+  const shirt = mk(J ? J.base : (look.shirt || '#2f6fe0'));
+  const pants = mk(look.pants || '#2d3436');
+  const hair = mk(look.hair || '#4a3020');
+  const mats = [skin, shirt, pants, hair];
 
-  // thân (chibi): mặt trước/sau có thể dán ảnh thiết kế
-  let front = shirt;
-  if (look.texture) {
+  // thân tròn mềm; mặt trước/sau có thể dán áo đấu hoặc ảnh thiết kế
+  let front = shirt, backM = shirt;
+  if (jersey) {
+    front = new THREE.MeshLambertMaterial({ map: jerseyTexture(jersey, false) });
+    backM = new THREE.MeshLambertMaterial({ map: jerseyTexture(jersey, true) });
+    mats.push(front, backM);
+  } else if (look.texture) {
     const tex = texLoader.load(look.texture);
     tex.colorSpace = THREE.SRGBColorSpace;
     front = new THREE.MeshLambertMaterial({ map: tex });
+    backM = front;
     mats.push(front);
   }
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.85, 0.5), [shirt, shirt, shirt, shirt, front, front]);
-  torso.position.y = 0.95;
+  const torso = new THREE.Mesh(new RoundedBoxGeometry(0.88, 0.88, 0.52, 4, 0.16), [shirt, shirt, shirt, shirt, front, backM]);
+  torso.position.y = 0.97;
   g.add(torso);
 
-  // đầu to tròn
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.68, 32, 24), skin);
-  head.position.y = 1.85;
+  // đầu to tròn kiểu đất sét
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.68, 40, 30), skin);
+  head.position.y = 1.85; head.scale.set(1.04, 0.98, 1);
   g.add(head);
-
-  // tóc: chỏm tròn + mái + tóc sau
-  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.72, 32, 20, 0, Math.PI * 2, 0, Math.PI * 0.5), hair);
-  cap.position.set(0, 1.88, -0.04); cap.rotation.x = -0.35;
-  g.add(cap);
-  const backHair = new THREE.Mesh(new THREE.SphereGeometry(0.7, 24, 16, 0, Math.PI * 2, Math.PI * 0.35, Math.PI * 0.4), hair);
-  backHair.position.set(0, 1.82, -0.1); backHair.rotation.x = 0.0;
-  g.add(backHair);
-  for (const x of [-0.3, 0, 0.3]) {
-    const bang = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10), hair);
-    bang.position.set(x, 2.38 - Math.abs(x) * 0.25, 0.46); bang.scale.set(1, 0.8, 0.7);
-    g.add(bang);
-  }
-
-  // tóc dài + 2 bím buộc nơ cho nữ
-  if (female) {
-    const longHair = new THREE.Mesh(new THREE.SphereGeometry(0.64, 24, 16), hair);
-    longHair.scale.set(1.05, 1.45, 0.55); longHair.position.set(0, 1.45, -0.42); g.add(longHair);
-    const bowMat = new THREE.MeshLambertMaterial({ color: 0xff5c8a });
+  if (!female) {
     for (const s of [-1, 1]) {
-      const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.5, 6, 12), hair);
-      tail.position.set(s * 0.72, 1.55, -0.12); tail.rotation.z = s * 0.25; g.add(tail);
-      const bow = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), bowMat);
-      bow.scale.set(1.5, 1, 0.8); bow.position.set(s * 0.64, 2.12, -0.05); g.add(bow);
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), skin);
+      ear.position.set(s * 0.69, 1.8, 0); ear.scale.set(0.6, 1, 0.9); g.add(ear);
     }
   }
+  buildHair(g, Math.min(5, Math.max(1, look.hairStyle | 0 || 1)), female, hair);
 
-  // mắt to, má hồng, miệng cười
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x151515 });
+  // ---- khuôn mặt + biểu cảm ----
+  const face = new THREE.Group(); g.add(face);
+  const dark = new THREE.MeshBasicMaterial({ color: 0x1a1210 });
   const white = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const blush = new THREE.MeshBasicMaterial({ color: 0xff8f9c });
-  for (const s of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 12), eyeMat);
-    eye.position.set(s * 0.24, 1.84, 0.6); eye.scale.set(1, 1.35, 0.5);
-    const shine = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), white);
-    shine.position.set(s * 0.24 + 0.03, 1.9, 0.64);
-    const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 8), blush);
-    cheek.position.set(s * 0.4, 1.68, 0.52); cheek.scale.set(1, 0.6, 0.4);
-    g.add(eye, shine, cheek);
-    if (female) {
-      const lash = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.025, 0.02), eyeMat);
-      lash.position.set(s * 0.3, 1.97, 0.58); lash.rotation.z = -s * 0.5; g.add(lash);
+  const redM = new THREE.MeshBasicMaterial({ color: 0x8a2b2b });
+  const tongueM = new THREE.MeshBasicMaterial({ color: 0xff7a8a });
+  const browM = new THREE.MeshBasicMaterial({ color: new THREE.Color(look.hair || '#4a3020').multiplyScalar(0.8) });
+  const F = (m) => { face.add(m); return m; };
+  const ell = (r, x, y, z, sx, sy, sz, mat) => { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), mat); m.position.set(x, y, z); m.scale.set(sx, sy, sz); return F(m); };
+  const arc = (R, t, x, y, z, rz, mat = dark) => { const m = new THREE.Mesh(new THREE.TorusGeometry(R, t, 6, 16, Math.PI), mat); m.position.set(x, y, z); m.rotation.z = rz; return F(m); };
+  const openEye = (s, k = 1) => {
+    ell(0.1, s * 0.25, 1.83, 0.615, k, 1.5 * k, 0.45, dark);
+    ell(0.04, s * 0.25 + 0.035, 1.9, 0.655, 1, 1, 0.5, white);
+    ell(0.02, s * 0.25 - 0.03, 1.78, 0.655, 1, 1, 0.5, white);
+  };
+  const closedEye = (s) => arc(0.085, 0.022, s * 0.25, 1.79, 0.635, 0);
+  const brow = (s, y, rot) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.04, 0.03), browM);
+    m.position.set(s * 0.25, y, 0.6); m.rotation.set(0, s * 0.35, rot); F(m);
+  };
+  const sprite = (t, x, y, z) => { const sp = textSprite(t, { size: 70 }); sp.scale.multiplyScalar(0.4); sp.position.set(x, y, z); F(sp); };
+  function setFace(name) {
+    while (face.children.length) face.remove(face.children[0]);
+    const strong = name === 'laugh' || name === 'happy';
+    for (const s of [-1, 1]) ell(0.085, s * 0.42, 1.66, 0.5, strong ? 1.2 : 1, 0.6, 0.4, blush);
+    const mouthY = 1.62, mz = 0.645;
+    if (name === 'normal') {
+      openEye(-1); openEye(1); brow(-1, 2.07, 0.05); brow(1, 2.07, -0.05);
+      arc(0.055, 0.016, 0, mouthY + 0.02, mz, Math.PI);
+    } else if (name === 'happy') {
+      closedEye(-1); closedEye(1); brow(-1, 2.1, 0.1); brow(1, 2.1, -0.1);
+      const d = new THREE.Mesh(new THREE.CircleGeometry(0.085, 16, Math.PI, Math.PI), redM); d.position.set(0, mouthY + 0.03, mz - 0.005); F(d);
+      arc(0.085, 0.02, 0, mouthY + 0.03, mz, Math.PI);
+    } else if (name === 'surprised') {
+      openEye(-1, 1.15); openEye(1, 1.15); brow(-1, 2.15, 0.1); brow(1, 2.15, -0.1);
+      ell(0.055, 0, 1.58, 0.64, 1, 1.3, 0.4, redM);
+      sprite('❗', 0.58, 2.5, 0.3);
+    } else if (name === 'sad') {
+      openEye(-1, 0.95); openEye(1, 0.95); brow(-1, 2.05, 0.38); brow(1, 2.05, -0.38);
+      arc(0.06, 0.016, 0, 1.56, mz, 0);
+      ell(0.04, -0.3, 1.62, 0.6, 0.8, 1.5, 0.5, new THREE.MeshBasicMaterial({ color: 0x8fd3ff }));
+    } else if (name === 'angry') {
+      openEye(-1, 0.95); openEye(1, 0.95); brow(-1, 2.0, -0.42); brow(1, 2.0, 0.42);
+      arc(0.05, 0.016, 0, 1.57, mz, 0);
+      sprite('💢', 0.6, 2.45, 0.3);
+    } else if (name === 'wink') {
+      openEye(-1); closedEye(1); brow(-1, 2.08, 0.08); brow(1, 2.12, -0.12);
+      arc(0.07, 0.018, 0, mouthY + 0.03, mz, Math.PI);
+      sprite('✨', 0.6, 2.5, 0.3);
+    } else { // laugh
+      closedEye(-1); closedEye(1); brow(-1, 2.12, 0.12); brow(1, 2.12, -0.12);
+      const d = new THREE.Mesh(new THREE.CircleGeometry(0.13, 20, Math.PI, Math.PI), redM); d.position.set(0, mouthY + 0.06, mz - 0.005); F(d);
+      ell(0.06, 0, mouthY - 0.04, mz - 0.002, 1.2, 0.6, 0.2, tongueM);
+      arc(0.13, 0.022, 0, mouthY + 0.06, mz, Math.PI);
     }
   }
-  const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.014, 6, 16, Math.PI), new THREE.MeshBasicMaterial({ color: 0x6b2a2a }));
-  mouth.position.set(0, 1.68, 0.655); mouth.rotation.z = Math.PI;
-  g.add(mouth);
+  setFace(look.face || 'normal');
+  g.userData.setFace = setFace;
 
-  // tay chân ngắn tròn
+  // thân/tay/chân ngắn tròn
   const limb = (mat, r, len, x, y, shoe) => {
     const pivot = new THREE.Group();
     pivot.position.set(x, y, 0);
-    const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 6, 12), mat);
+    const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 8, 16), mat);
     m.position.y = -(len / 2 + r * 0.6);
     pivot.add(m);
     if (shoe) {
-      const sh = new THREE.Mesh(new THREE.SphereGeometry(r * 1.25, 12, 8), shoe);
-      sh.scale.set(1, 0.6, 1.4); sh.position.set(0, -(len + r * 1.2) + 0.02, 0.07);
+      const sh = new THREE.Mesh(new THREE.SphereGeometry(r * 1.35, 16, 10), shoe);
+      sh.scale.set(1, 0.6, 1.45); sh.position.set(0, -(len + r * 1.2) + 0.03, 0.08);
       pivot.add(sh);
     }
     g.add(pivot);
     return pivot;
   };
-  const shoeMat = mk('#f2f2f2');
-  const armL = limb(shirt, 0.14, 0.3, -0.56, 1.25);
-  const armR = limb(shirt, 0.14, 0.3, 0.56, 1.25);
-  const legL = limb(female ? skin : pants, 0.17, 0.2, -0.24, 0.55, shoeMat);
-  const legR = limb(female ? skin : pants, 0.17, 0.2, 0.24, 0.55, shoeMat);
-  if (female) { // váy xòe
-    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.43, 0.68, 0.38, 24), pants);
-    skirt.position.y = 0.62; g.add(skirt);
+  const shoeMat = mk('#f7f7f7');
+  const armL = limb(shirt, 0.15, 0.3, -0.58, 1.27);
+  const armR = limb(shirt, 0.15, 0.3, 0.58, 1.27);
+  const legMat = female ? mk('#f4f4f4') : pants; // nữ: tất trắng
+  const legL = limb(legMat, 0.17, 0.2, -0.24, 0.55, shoeMat);
+  const legR = limb(legMat, 0.17, 0.2, 0.24, 0.55, shoeMat);
+  if (female) {
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.43, 0.7, 0.4, 28), pants);
+    skirt.position.y = 0.64; g.add(skirt);
   }
-  // bàn tay
-  for (const a of [armL, armR]) {
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), skin);
-    hand.position.y = -0.52; a.add(hand);
-  }
+  // bàn tay + cổ tay áo đấu
+  [armL, armR].forEach((a, i) => {
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.135, 14, 10), skin);
+    hand.position.y = -0.55; a.add(hand);
+    if (J) {
+      const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.04, 8, 18), mk(i ? J.cuffR : J.cuffL));
+      cuff.position.y = -0.42; cuff.rotation.x = Math.PI / 2; a.add(cuff);
+    }
+  });
 
   let t = 0;
   g.userData.animate = (moving, dt) => {
@@ -138,9 +314,9 @@ function makeAvatar(look) {
       const u = ud.act.t / 0.4;
       if (u >= 1) ud.act = null;
       else {
-        const s = Math.sin(u * Math.PI);
-        if (ud.act.type === 'punch') { armR.rotation.x = -1.8 * s; armL.rotation.x = 0.5 * s; }
-        else { legR.rotation.x = -1.5 * s; armL.rotation.x = 0.6 * s; armR.rotation.x = -0.6 * s; }
+        const sn = Math.sin(u * Math.PI);
+        if (ud.act.type === 'punch') { armR.rotation.x = -1.8 * sn; armL.rotation.x = 0.5 * sn; }
+        else { legR.rotation.x = -1.5 * sn; armL.rotation.x = 0.6 * sn; armR.rotation.x = -0.6 * sn; }
       }
     }
   };
@@ -171,12 +347,30 @@ function textSprite(text, { size = 48, bg = null, color = '#fff', maxW = 512 } =
 }
 
 /* ---------------- Lobby / preview ---------------- */
-const look = { gender: 'male', skin: '#f1c27d', hair: '#3b2a1a', shirt: '#3a7bd5', pants: '#2d3436', texture: null };
+const look = { gender: 'male', hairStyle: 1, face: 'normal', jersey: '', skin: '#f2c394', hair: '#4a3020', shirt: '#2f6fe0', pants: '#2d3436', texture: null };
+function renderHairButtons() {
+  $('hairStyles').innerHTML = HAIR_NAMES[look.gender].map((n, i) =>
+    `<button type="button" data-h="${i + 1}" class="${look.hairStyle === i + 1 ? 'on' : ''}">${i + 1}. ${n}</button>`).join('');
+}
+function renderFaceButtons() {
+  $('faces').innerHTML = FACE_LIST.map(([k, e, n]) =>
+    `<button type="button" data-f="${k}" title="${n}" class="${look.face === k ? 'on' : ''}"><span>${e}</span>${n}</button>`).join('');
+}
+renderHairButtons(); renderFaceButtons();
+$('hairStyles').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  look.hairStyle = +b.dataset.h; renderHairButtons(); rebuildPreview();
+});
+$('faces').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  look.face = b.dataset.f; renderFaceButtons(); rebuildPreview();
+});
 for (const b of document.querySelectorAll('#gender button')) {
   b.addEventListener('click', () => {
     look.gender = b.dataset.g;
     document.querySelectorAll('#gender button').forEach((x) => x.classList.toggle('on', x === b));
     $('pantsLabel').firstChild.textContent = look.gender === 'female' ? 'Váy ' : 'Quần ';
+    renderHairButtons();
     rebuildPreview();
   });
 }
@@ -188,7 +382,7 @@ const pvScene = new THREE.Scene();
 pvScene.add(new THREE.HemisphereLight(0xffffff, 0x555566, 1.6));
 const pvLight = new THREE.DirectionalLight(0xffffff, 1.2); pvLight.position.set(2, 4, 5); pvScene.add(pvLight);
 const pvCam = new THREE.PerspectiveCamera(35, pv.width / pv.height, 0.1, 50);
-pvCam.position.set(0, 1.8, 7); pvCam.lookAt(0, 1.4, 0);
+pvCam.position.set(0, 1.9, 8.6); pvCam.lookAt(0, 1.45, 0);
 let pvAvatar = null;
 function rebuildPreview() {
   if (pvAvatar) pvScene.remove(pvAvatar);
@@ -205,9 +399,17 @@ let inLobby = true;
   pvRenderer.render(pvScene, pvCam);
 })();
 
+for (const [k, v] of Object.entries({ skin: look.skin, hair: look.hair, shirt: look.shirt, pants: look.pants })) $(k).value = v;
 for (const k of ['skin', 'hair', 'shirt', 'pants']) {
   $(k).addEventListener('input', (e) => { look[k] = e.target.value; rebuildPreview(); });
 }
+const markJersey = () => document.querySelectorAll('#jerseys button').forEach((x) => x.classList.toggle('on', x.dataset.j === look.jersey && !look.texture));
+$('jerseys').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  look.jersey = b.dataset.j; look.texture = null; $('texture').value = '';
+  markJersey(); rebuildPreview();
+});
 $('texture').addEventListener('change', (e) => {
   const f = e.target.files[0];
   if (!f) return;
@@ -222,12 +424,13 @@ $('texture').addEventListener('change', (e) => {
     const w = img.width * s, h = img.height * s;
     ctx.drawImage(img, (256 - w) / 2, (256 - h) / 2, w, h);
     look.texture = c.toDataURL('image/jpeg', 0.85);
-    rebuildPreview();
+    look.jersey = '';
+    markJersey(); rebuildPreview();
     URL.revokeObjectURL(img.src);
   };
   img.src = URL.createObjectURL(f);
 });
-$('clearTex').onclick = () => { look.texture = null; $('texture').value = ''; rebuildPreview(); };
+$('clearTex').onclick = () => { look.texture = null; look.jersey = ''; $('texture').value = ''; markJersey(); rebuildPreview(); };
 
 const savedName = localStorage.getItem('cinema-name');
 if (savedName) $('name').value = savedName;
@@ -504,7 +707,7 @@ function addPlayer(p) {
   group.userData.sit = !!p.seat;
   group.userData.pid = p.id;
   const label = textSprite(p.name, { size: 44, bg: 'rgba(0,0,0,.45)' });
-  label.position.set(0, 3.0, 0);
+  label.position.set(0, 3.4, 0);
   group.add(label);
   scene.add(group);
   players.set(p.id, { group, label, bubble: null, target: { x: p.x, z: p.z, ry: p.ry || 0 }, moving: false, name: p.name });
@@ -522,7 +725,7 @@ function showBubble(id, text) {
   const short = text.length > 40 ? text.slice(0, 40) + '…' : text;
   const b = textSprite(short, { size: 40, bg: 'rgba(255,255,255,.85)', color: '#111' });
   b.material.opacity = 0.9;
-  b.position.set(0, 3.6, 0);
+  b.position.set(0, 4.0, 0);
   p.group.add(b); p.bubble = b;
   p.bubbleT = setTimeout(() => { p.group.remove(b); if (p.bubble === b) p.bubble = null; }, 6000);
 }
@@ -701,7 +904,7 @@ $('enter').onclick = () => {
   const room = $('room').value.trim() || 'main';
   inLobby = false;
   $('lobby').classList.add('hidden');
-  for (const id of ['screenPanel', 'chat', 'help']) $(id).classList.remove('hidden');
+  for (const id of ['screenPanel', 'chat', 'help', 'emoteBar']) $(id).classList.remove('hidden');
   let cid = sessionStorage.getItem('cinema-cid');
   if (!cid) { cid = Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem('cinema-cid', cid); }
   socket.emit('join', { room, name, look, cid });
@@ -987,6 +1190,17 @@ function playNextVoice() {
   au.onended = done; au.onerror = done;
   au.play().catch(done);
 }
+
+/* ---------------- Biểu cảm trong rạp (phím 1-7) ---------------- */
+const emoteBar = $('emoteBar');
+emoteBar.innerHTML = FACE_LIST.map(([k, e, n], i) => `<button data-f="${k}" title="${i + 1}: ${n}">${e}</button>`).join('');
+emoteBar.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) socket.emit('face', b.dataset.f); });
+addEventListener('keydown', (e) => {
+  if (inLobby || chatting || menuOpen || e.repeat) return;
+  const n = parseInt(e.key, 10);
+  if (n >= 1 && n <= FACE_LIST.length) socket.emit('face', FACE_LIST[n - 1][0]);
+});
+socket.on('face', ({ id, face }) => { const p = players.get(id); if (p) p.group.userData.setFace(face); });
 
 /* ---------------- Main loop ---------------- */
 let last = 0, sendT = 0, lastSent = '';
