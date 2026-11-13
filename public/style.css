@@ -53,3 +53,10 @@ body.fs #scene { pointer-events: none; }
 #menuItems button:hover { background: #3d2d5c; border-color: #c9a227; }
 #menuItems button span { font-size: 24px; }
 .menu-foot { display: flex; justify-content: space-between; margin-top: 12px; }
+
+#history { pointer-events: auto; max-height: 45vh; overflow-y: auto; margin-bottom: 6px; padding: 6px; display: flex; flex-direction: column; gap: 3px;
+  background: rgba(0,0,0,.4); border-radius: 10px; scrollbar-width: thin; }
+#history .msg { opacity: .9; transition: none; }
+#actionMenu { position: fixed; z-index: 45; background: rgba(20,14,30,.92); border: 1px solid #c9a227; border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 150px; }
+#actionName { text-align: center; font-weight: bold; color: #f1d27a; }
+#actionMenu button { padding: 8px; }

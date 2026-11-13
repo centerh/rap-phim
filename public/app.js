@@ -14,6 +14,7 @@ function makeAvatar(look) {
   const shirt = mk(look.shirt || '#3a7bd5');
   const pants = mk(look.pants || '#2d3436');
   const hair = mk(look.hair || '#3b2a1a');
+  const mats = [skin, shirt, pants, hair];
 
   // thân (chibi): mặt trước/sau có thể dán ảnh thiết kế
   let front = shirt;
@@ -21,6 +22,7 @@ function makeAvatar(look) {
     const tex = texLoader.load(look.texture);
     tex.colorSpace = THREE.SRGBColorSpace;
     front = new THREE.MeshLambertMaterial({ map: tex });
+    mats.push(front);
   }
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.85, 0.5), [shirt, shirt, shirt, shirt, front, front]);
   torso.position.y = 0.95;
@@ -89,6 +91,14 @@ function makeAvatar(look) {
 
   let t = 0;
   g.userData.animate = (moving, dt) => {
+    const ud = g.userData;
+    if (ud.hit !== undefined) { // bị đánh: nháy đỏ + lắc
+      ud.hit -= dt;
+      const k = Math.max(0, ud.hit) / 0.45;
+      for (const m of mats) m.emissive.setRGB(k * 0.9, 0, 0);
+      g.rotation.z = Math.sin(ud.hit * 45) * 0.3 * k;
+      if (ud.hit <= 0) ud.hit = undefined;
+    }
     if (g.userData.sit) {
       armL.rotation.x = -0.6; armR.rotation.x = -0.6;
       legL.rotation.x = -1.5; legR.rotation.x = -1.5;
@@ -101,6 +111,16 @@ function makeAvatar(look) {
     armL.rotation.x = s; armR.rotation.x = -s;
     legL.rotation.x = -s; legR.rotation.x = s;
     g.userData.bob = moving ? Math.abs(Math.sin(t)) * 0.08 : 0;
+    if (ud.act) { // đấm / đá
+      ud.act.t += dt;
+      const u = ud.act.t / 0.4;
+      if (u >= 1) ud.act = null;
+      else {
+        const s = Math.sin(u * Math.PI);
+        if (ud.act.type === 'punch') { armR.rotation.x = -1.8 * s; armL.rotation.x = 0.5 * s; }
+        else { legR.rotation.x = -1.5 * s; armL.rotation.x = 0.6 * s; armR.rotation.x = -0.6 * s; }
+      }
+    }
   };
   return g;
 }
@@ -331,6 +351,7 @@ function addPlayer(p) {
   group.position.set(p.x, 0, p.z);
   group.rotation.y = p.ry || 0;
   group.userData.sit = !!p.seat;
+  group.userData.pid = p.id;
   const label = textSprite(p.name, { size: 44, bg: 'rgba(0,0,0,.45)' });
   label.position.set(0, 3.0, 0);
   group.add(label);
@@ -356,7 +377,8 @@ function showBubble(id, text) {
 }
 
 /* ---------------- Networking ---------------- */
-socket.on('init', ({ id, players: list, video, tables }) => {
+socket.on('init', ({ id, players: list, video, tables, chat }) => {
+  for (const m of chat || []) addChat(m.name, m.text, false, true, m.ts);
   myId = id;
   for (const p of list) addPlayer(p);
   const mine = players.get(id);
@@ -376,24 +398,47 @@ socket.on('player-move', (m) => {
   p.target = { x: m.x, z: m.z, ry: m.ry }; p.moving = m.moving;
 });
 socket.on('count', (n) => { $('count').textContent = '👥 ' + n; });
-socket.on('chat', ({ id, name, text }) => { addChat(name, text); showBubble(id, text); });
+socket.on('chat', ({ id, name, text, ts }) => { addChat(name, text, false, false, ts); showBubble(id, text); });
 socket.on('video', (v) => { pendingVideo = v; applyPending(); });
 
 /* ---------------- Chat (mờ, góc dưới trái) ---------------- */
-function addChat(name, text, system = false) {
+const chatHistory = [];
+let histPinned = false;
+function fmtTime(ts) { const d = new Date(ts || Date.now()); return d.toTimeString().slice(0, 5); }
+function makeMsgEl(name, text, system, ts, withTime) {
   const el = document.createElement('div');
   el.className = 'msg';
-  if (system) { el.style.fontStyle = 'italic'; el.textContent = text; }
+  if (withTime) { const tm = document.createElement('small'); tm.textContent = fmtTime(ts) + ' '; tm.style.opacity = .6; el.append(tm); }
+  if (system) { el.style.fontStyle = 'italic'; el.append(document.createTextNode(text)); }
   else { const b = document.createElement('b'); b.textContent = name + ':'; el.append(b, document.createTextNode(text)); }
+  return el;
+}
+function refreshHistory() {
+  const show = histPinned || chatting;
+  $('history').classList.toggle('hidden', !show);
+  $('log').classList.toggle('hidden', show);
+  if (show) $('history').scrollTop = $('history').scrollHeight;
+}
+function addChat(name, text, system = false, quiet = false, ts = Date.now()) {
+  chatHistory.push({ name, text, system, ts });
+  if (chatHistory.length > 300) chatHistory.shift();
+  const h = $('history');
+  const stick = h.scrollTop + h.clientHeight >= h.scrollHeight - 30;
+  h.appendChild(makeMsgEl(name, text, system, ts, true));
+  while (h.children.length > 300) h.firstChild.remove();
+  if (stick || chatting) h.scrollTop = h.scrollHeight;
+  if (quiet) return;
+  const el = makeMsgEl(name, text, system, ts, false);
   const log = $('log');
   log.appendChild(el);
   while (log.children.length > 12) log.firstChild.remove();
   setTimeout(() => el.classList.add('fade'), 12000);
   setTimeout(() => el.remove(), 14000);
 }
+$('histBtn').onclick = () => { histPinned = !histPinned; refreshHistory(); };
 const chatInput = $('chatInput');
-chatInput.addEventListener('focus', () => { chatting = true; for (const k in keys) keys[k] = false; });
-chatInput.addEventListener('blur', () => { chatting = false; });
+chatInput.addEventListener('focus', () => { chatting = true; for (const k in keys) keys[k] = false; refreshHistory(); });
+chatInput.addEventListener('blur', () => { chatting = false; refreshHistory(); });
 chatInput.addEventListener('keydown', (e) => {
   e.stopPropagation();
   if (e.key === 'Enter') {
@@ -592,24 +637,114 @@ addEventListener('keydown', (e) => { if (e.key === 'Escape' && menuOpen) closeMe
 
 // click chọn sofa / bàn
 const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function otherGroups() {
+  const arr = [];
+  for (const [id, p] of players) if (id !== myId) arr.push(p.group);
+  return arr;
+}
 function pick(e) {
   const r = canvas.getBoundingClientRect();
   ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
-  const hits = raycaster.intersectObjects(clickables, true);
+  const hits = raycaster.intersectObjects(clickables.concat(otherGroups()), true);
   for (const h of hits) {
     let o = h.object;
-    while (o && !o.userData.seatId && !o.userData.tableId) o = o.parent;
+    while (o && !o.userData.seatId && !o.userData.tableId && !o.userData.pid) o = o.parent;
     if (o) return o.userData;
   }
   return null;
 }
+
+/* ---- Tương tác nhân vật: đấm / đá ---- */
+const fx = [];
+function spawnFx(text, pos) {
+  const sp = textSprite(text, { size: 80, color: '#fff' });
+  sp.position.set(pos.x, 2.6, pos.z); scene.add(sp);
+  fx.push({ sp, t: 0 });
+}
+let lastAtk = 0, actionTarget = null;
+const actionMenu = $('actionMenu');
+function closeActionMenu() { actionMenu.classList.add('hidden'); actionTarget = null; }
+function openActionMenu(pid, x, y) {
+  const p = players.get(pid);
+  if (!p) return;
+  actionTarget = pid;
+  $('actionName').textContent = p.name;
+  actionMenu.style.left = Math.min(x, innerWidth - 170) + 'px';
+  actionMenu.style.top = Math.min(y, innerHeight - 140) + 'px';
+  actionMenu.classList.remove('hidden');
+}
+function doAttack(type, tid) {
+  const t = players.get(tid), mine = players.get(myId);
+  if (!t || !mine || tid === myId) return;
+  const now = performance.now();
+  if (now - lastAtk < 600) return;
+  const dist = Math.hypot(t.group.position.x - me.x, t.group.position.z - me.z);
+  if (dist > 3.6) return addChat('', 'Lại gần hơn một chút nhé 🏃', true);
+  lastAtk = now;
+  if (me.sit) { // đứng dậy trước khi ra đòn
+    const s = seatsInfo.get(me.sit);
+    me.sit = null; me.x = s.x; me.z = s.z - 1.3;
+    socket.emit('stand', { x: me.x, z: me.z });
+  }
+  socket.emit('attack', { target: tid, type });
+}
+function attackNearest(type) {
+  let best = null, bd = 3.6;
+  for (const [id, p] of players) {
+    if (id === myId) continue;
+    const d = Math.hypot(p.group.position.x - me.x, p.group.position.z - me.z);
+    if (d < bd) { bd = d; best = id; }
+  }
+  if (best) doAttack(type, best);
+  else addChat('', 'Không có ai ở gần để ' + (type === 'punch' ? 'đấm' : 'đá'), true);
+}
+$('actPunch').onclick = () => { const t = actionTarget; closeActionMenu(); approachAndAttack('punch', t); };
+$('actKick').onclick = () => { const t = actionTarget; closeActionMenu(); approachAndAttack('kick', t); };
+function approachAndAttack(type, tid) {
+  const t = players.get(tid);
+  if (!t || !me) return;
+  const dx = t.group.position.x - me.x, dz = t.group.position.z - me.z, d = Math.hypot(dx, dz);
+  if (d <= 2.6) return doAttack(type, tid);
+  if (me.sit) { socket.emit('stand', { x: me.x, z: me.z - 1.3 }); me.sit = null; me.z -= 1.3; }
+  me.walkTo = { x: t.group.position.x - dx / d * 1.8, z: t.group.position.z - dz / d * 1.8, attack: { type, tid } };
+}
+addEventListener('keydown', (e) => {
+  if (inLobby || chatting || menuOpen || fsMode || !me) return;
+  const k = e.key.toLowerCase();
+  if (k === 'f') attackNearest('punch');
+  else if (k === 'g') attackNearest('kick');
+  else if (k === 'escape') closeActionMenu();
+});
+socket.on('attack', ({ from, to, type }) => {
+  const a = players.get(from), v = players.get(to);
+  if (!a || !v) return;
+  let nx = v.group.position.x - a.group.position.x, nz = v.group.position.z - a.group.position.z;
+  const len = Math.hypot(nx, nz) || 1; nx /= len; nz /= len;
+  const face = Math.atan2(nx, nz);
+  a.group.userData.act = { type, t: 0 };
+  a.target.ry = face;
+  if (from === myId && me) me.ry = face;
+  v.group.userData.hit = 0.45;
+  spawnFx(type === 'punch' ? '👊 BỊCH!' : '🦶 BỐP!', v.group.position);
+  if (to === myId && me) {
+    if (me.sit) {
+      const s = seatsInfo.get(me.sit);
+      me.sit = null; me.x = s.x; me.z = s.z - 1.3;
+      socket.emit('stand', { x: me.x, z: me.z });
+    }
+    me.kb = { x: nx * (type === 'kick' ? 9 : 6), z: nz * (type === 'kick' ? 9 : 6), t: 0.25 };
+  }
+  addChat('', `${a.name} ${type === 'punch' ? 'đấm 👊' : 'đá 🦶'} ${v.name}`, true);
+});
 let downX = 0, downY = 0;
 canvas.addEventListener('pointerdown', (e) => { downX = e.clientX; downY = e.clientY; });
 canvas.addEventListener('pointerup', (e) => {
   if (fsMode || menuOpen || Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return;
   const u = pick(e);
+  closeActionMenu();
   if (!u || !me) return;
+  if (u.pid) return openActionMenu(u.pid, e.clientX, e.clientY);
   if (u.tableId) return openMenu(u.tableId);
   if (u.seatId) {
     if (me.sit === u.seatId) return;
@@ -655,8 +790,9 @@ function loop(now) {
       const dist = Math.hypot(wx, wz);
       if (dist < 0.15) {
         me.x = me.walkTo.x; me.z = me.walkTo.z;
-        const seat = me.walkTo.seat; me.walkTo = null;
-        socket.emit('sit', { seat, x: me.x, z: me.z });
+        const w = me.walkTo; me.walkTo = null;
+        if (w.seat) socket.emit('sit', { seat: w.seat, x: me.x, z: me.z });
+        else if (w.attack) doAttack(w.attack.type, w.attack.tid);
       } else {
         const step = Math.min(dist, 5 * dt);
         me.x += wx / dist * step; me.z += wz / dist * step;
@@ -672,6 +808,12 @@ function loop(now) {
       me.z = Math.min(BOUND.zMax, Math.max(BOUND.zMin, me.z + dz * speed * dt));
       me.ry = Math.atan2(dx, dz);
       moving = true;
+    }
+    if (me.kb) { // bị đẩy lùi
+      me.x = Math.min(BOUND.x, Math.max(-BOUND.x, me.x + me.kb.x * dt));
+      me.z = Math.min(BOUND.zMax, Math.max(BOUND.zMin, me.z + me.kb.z * dt));
+      me.kb.t -= dt; moving = true;
+      if (me.kb.t <= 0) me.kb = null;
     }
     if (fpMode && !fsMode && !me.walkTo) me.ry = camYaw + Math.PI; // nhân vật nhìn theo hướng camera
     mine.group.userData.sit = !!me.sit;
@@ -720,6 +862,12 @@ function loop(now) {
     g.rotation.y += d * Math.min(1, dt * 12);
     g.userData.animate(p.moving, dt);
     g.position.y = g.userData.bob || 0;
+  }
+  for (let i = fx.length - 1; i >= 0; i--) {
+    const f = fx[i]; f.t += dt;
+    f.sp.position.y += dt * 1.6;
+    f.sp.material.opacity = Math.max(0, 1 - f.t / 0.9);
+    if (f.t > 0.9) { scene.remove(f.sp); fx.splice(i, 1); }
   }
   renderer.render(scene, camera);
   cssRenderer.render(scene, camera);

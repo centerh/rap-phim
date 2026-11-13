@@ -13,7 +13,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // rooms: name -> { players: Map, video: {id,time,playing,ts} }
 const rooms = new Map();
 function getRoom(name) {
-  if (!rooms.has(name)) rooms.set(name, { players: new Map(), seats: new Map(), tables: {}, video: { id: 'dQw4w9WgXcQ', time: 0, playing: false, ts: Date.now() } });
+  if (!rooms.has(name)) rooms.set(name, { players: new Map(), chat: [], seats: new Map(), tables: {}, video: { id: 'dQw4w9WgXcQ', time: 0, playing: false, ts: Date.now() } });
   return rooms.get(name);
 }
 const ITEM_KEYS = ['popcorn', 'caramel', 'coke', 'pepsi', 'orange', 'peach', 'milktea', 'water'];
@@ -59,7 +59,7 @@ io.on('connection', (socket) => {
       x: (Math.random() - 0.5) * 6, z: 6, ry: 0,
     };
     room.players.set(socket.id, p);
-    socket.emit('init', { id: socket.id, players: [...room.players.values()], video: currentVideo(room.video), tables: room.tables });
+    socket.emit('init', { id: socket.id, players: [...room.players.values()], video: currentVideo(room.video), tables: room.tables, chat: room.chat });
     socket.to(roomName).emit('player-join', p);
     io.to(roomName).emit('count', room.players.size);
   });
@@ -77,7 +77,20 @@ io.on('connection', (socket) => {
     const p = room.players.get(socket.id);
     const t = clean(text, 200).trim();
     if (!p || !t) return;
-    io.to(roomName).emit('chat', { id: socket.id, name: p.name, text: t });
+    const msg = { id: socket.id, name: p.name, text: t, ts: Date.now() };
+    room.chat.push(msg); if (room.chat.length > 50) room.chat.shift();
+    io.to(roomName).emit('chat', msg);
+  });
+
+  socket.on('attack', ({ target, type }) => {
+    if (!room || !['punch', 'kick'].includes(type) || target === socket.id) return;
+    const a = room.players.get(socket.id), v = room.players.get(target);
+    if (!a || !v) return;
+    const now = Date.now();
+    if (a.lastAtk && now - a.lastAtk < 450) return;
+    if (Math.hypot(a.x - v.x, a.z - v.z) > 5) return;
+    a.lastAtk = now;
+    io.to(roomName).emit('attack', { from: socket.id, to: target, type });
   });
 
   socket.on('video-set', (id) => {
