@@ -20,11 +20,15 @@
       <div class="form">
         <label>Tên <input id="name" maxlength="20" placeholder="Nhập tên..."></label>
         <label>Phòng <input id="room" maxlength="30" placeholder="main" value="main"></label>
+        <div id="gender">
+          <button type="button" data-g="male" class="on">👦 Nam</button>
+          <button type="button" data-g="female">👧 Nữ</button>
+        </div>
         <div class="colors">
           <label>Da <input type="color" id="skin" value="#f1c27d"></label>
           <label>Tóc <input type="color" id="hair" value="#3b2a1a"></label>
           <label>Áo <input type="color" id="shirt" value="#3a7bd5"></label>
-          <label>Quần <input type="color" id="pants" value="#2d3436"></label>
+          <label id="pantsLabel">Quần <input type="color" id="pants" value="#2d3436"></label>
         </div>
         <label>Ảnh thiết kế áo (in lên áo)
           <input type="file" id="texture" accept="image/*">

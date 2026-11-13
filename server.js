@@ -54,6 +54,7 @@ io.on('connection', (socket) => {
       look: {
         skin: clean(look && look.skin, 9), shirt: clean(look && look.shirt, 9), pants: clean(look && look.pants, 9),
         hair: clean(look && look.hair, 9),
+        gender: look && look.gender === 'female' ? 'female' : 'male',
         texture: look && typeof look.texture === 'string' && look.texture.startsWith('data:image/') && look.texture.length < 600000 ? look.texture : null,
       },
       x: (Math.random() - 0.5) * 6, z: 6, ry: 0,

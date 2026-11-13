@@ -15,6 +15,7 @@ function makeAvatar(look) {
   const pants = mk(look.pants || '#2d3436');
   const hair = mk(look.hair || '#3b2a1a');
   const mats = [skin, shirt, pants, hair];
+  const female = look.gender === 'female';
 
   // thân (chibi): mặt trước/sau có thể dán ảnh thiết kế
   let front = shirt;
@@ -46,6 +47,19 @@ function makeAvatar(look) {
     g.add(bang);
   }
 
+  // tóc dài + 2 bím buộc nơ cho nữ
+  if (female) {
+    const longHair = new THREE.Mesh(new THREE.SphereGeometry(0.64, 24, 16), hair);
+    longHair.scale.set(1.05, 1.45, 0.55); longHair.position.set(0, 1.45, -0.42); g.add(longHair);
+    const bowMat = new THREE.MeshLambertMaterial({ color: 0xff5c8a });
+    for (const s of [-1, 1]) {
+      const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.5, 6, 12), hair);
+      tail.position.set(s * 0.72, 1.55, -0.12); tail.rotation.z = s * 0.25; g.add(tail);
+      const bow = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), bowMat);
+      bow.scale.set(1.5, 1, 0.8); bow.position.set(s * 0.64, 2.12, -0.05); g.add(bow);
+    }
+  }
+
   // mắt to, má hồng, miệng cười
   const eyeMat = new THREE.MeshBasicMaterial({ color: 0x151515 });
   const white = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -58,6 +72,10 @@ function makeAvatar(look) {
     const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 8), blush);
     cheek.position.set(s * 0.4, 1.68, 0.52); cheek.scale.set(1, 0.6, 0.4);
     g.add(eye, shine, cheek);
+    if (female) {
+      const lash = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.025, 0.02), eyeMat);
+      lash.position.set(s * 0.3, 1.97, 0.58); lash.rotation.z = -s * 0.5; g.add(lash);
+    }
   }
   const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.014, 6, 16, Math.PI), new THREE.MeshBasicMaterial({ color: 0x6b2a2a }));
   mouth.position.set(0, 1.68, 0.655); mouth.rotation.z = Math.PI;
@@ -81,8 +99,12 @@ function makeAvatar(look) {
   const shoeMat = mk('#f2f2f2');
   const armL = limb(shirt, 0.14, 0.3, -0.56, 1.25);
   const armR = limb(shirt, 0.14, 0.3, 0.56, 1.25);
-  const legL = limb(pants, 0.17, 0.2, -0.24, 0.55, shoeMat);
-  const legR = limb(pants, 0.17, 0.2, 0.24, 0.55, shoeMat);
+  const legL = limb(female ? skin : pants, 0.17, 0.2, -0.24, 0.55, shoeMat);
+  const legR = limb(female ? skin : pants, 0.17, 0.2, 0.24, 0.55, shoeMat);
+  if (female) { // váy xòe
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.43, 0.68, 0.38, 24), pants);
+    skirt.position.y = 0.62; g.add(skirt);
+  }
   // bàn tay
   for (const a of [armL, armR]) {
     const hand = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), skin);
@@ -149,7 +171,15 @@ function textSprite(text, { size = 48, bg = null, color = '#fff', maxW = 512 } =
 }
 
 /* ---------------- Lobby / preview ---------------- */
-const look = { skin: '#f1c27d', hair: '#3b2a1a', shirt: '#3a7bd5', pants: '#2d3436', texture: null };
+const look = { gender: 'male', skin: '#f1c27d', hair: '#3b2a1a', shirt: '#3a7bd5', pants: '#2d3436', texture: null };
+for (const b of document.querySelectorAll('#gender button')) {
+  b.addEventListener('click', () => {
+    look.gender = b.dataset.g;
+    document.querySelectorAll('#gender button').forEach((x) => x.classList.toggle('on', x === b));
+    $('pantsLabel').firstChild.textContent = look.gender === 'female' ? 'Váy ' : 'Quần ';
+    rebuildPreview();
+  });
+}
 
 const pv = $('preview');
 const pvRenderer = new THREE.WebGLRenderer({ canvas: pv, antialias: true, alpha: true });

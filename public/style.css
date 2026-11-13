@@ -62,3 +62,7 @@ body.fs #scene { pointer-events: none; }
 #actionMenu button { padding: 8px; }
 
 #screenPanel { left: 10px; transform: none; width: min(560px, 62vw); }
+
+#gender { display: flex; gap: 8px; }
+#gender button { flex: 1; padding: 10px; border: 2px solid transparent; font-size: 15px; }
+#gender button.on { border-color: #e50914; background: #4a2a3a; }
