@@ -297,6 +297,19 @@ function makeAvatar(look) {
       g.rotation.z = Math.sin(ud.hit * 45) * 0.3 * k;
       if (ud.hit <= 0) ud.hit = undefined;
     }
+    if (!ud.dance) { armL.rotation.z = 0; armR.rotation.z = 0; legL.rotation.z = 0; legR.rotation.z = 0; }
+    if (ud.dance) { // nhảy Audition
+      ud.dt = (ud.dt || 0) + dt;
+      const ph = ud.dt * Math.PI * 4, sn = Math.sin(ph), mv = Math.floor(ud.dt / 4) % 4;
+      armL.rotation.set(0, 0, 0); armR.rotation.set(0, 0, 0); legL.rotation.set(0, 0, 0); legR.rotation.set(0, 0, 0);
+      if (mv === 0) { armR.rotation.z = 2.4 + 0.3 * sn; armL.rotation.z = -0.4; legR.rotation.x = -0.7 * Math.max(0, sn); }
+      else if (mv === 1) { armL.rotation.z = -(sn > 0 ? 2.4 : 0.7); armR.rotation.z = sn > 0 ? 0.7 : 2.4; legL.rotation.x = -0.5 * sn; legR.rotation.x = 0.5 * sn; }
+      else if (mv === 2) { armL.rotation.z = -2.7; armR.rotation.z = 2.7; legL.rotation.z = -0.25; legR.rotation.z = 0.25; }
+      else { armL.rotation.x = -1.3 * Math.abs(sn); armR.rotation.x = -1.3 * Math.abs(Math.cos(ph)); legL.rotation.z = -0.3 * Math.max(0, sn); legR.rotation.z = 0.3 * Math.max(0, -sn); }
+      g.userData.bob = Math.abs(sn) * (mv === 2 ? 0.3 : 0.14);
+      g.rotation.y += Math.sin(ph / 2) * dt * 0.8;
+      return;
+    }
     if (g.userData.sit) {
       armL.rotation.x = -0.6; armR.rotation.x = -0.6;
       legL.rotation.x = -1.5; legR.rotation.x = -1.5;
@@ -459,7 +472,7 @@ const dl = new THREE.DirectionalLight(0xffffff, 0.55); dl.position.set(5, 12, 8)
 
 const clickables = [], seatsInfo = new Map(), tableGroups = new Map();
 const trophies = [], beams = [];
-const BOUND = { x: 14, zMin: -11, zMax: 14 };
+const BOUND = { x: 14, zMin: -11, zMax: 17.3 };
 
 function bannerTexture(w, h, draw) {
   const c = document.createElement('canvas');
@@ -487,7 +500,7 @@ function titleTexture() {
     ctx.strokeText('GRAND FINAL', 512, 365); ctx.fillStyle = g; ctx.fillText('GRAND FINAL', 512, 365);
     // BLG VS GENG
     rr(ctx, 170, 392, 270, 62, 12); ctx.fillStyle = '#1647c9'; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = '#cfd9ee'; ctx.stroke();
-    rr(ctx, 584, 392, 270, 62, 12); ctx.fillStyle = '#c4161f'; ctx.fill(); ctx.stroke();
+    rr(ctx, 584, 392, 270, 62, 12); ctx.fillStyle = '#15151b'; ctx.fill(); ctx.strokeStyle = '#f0c84b'; ctx.stroke();
     ctx.font = '900 46px "Arial Black", sans-serif'; ctx.fillStyle = '#fff';
     ctx.fillText('BLG', 305, 438); ctx.fillText('GENG', 719, 438);
     ctx.fillStyle = '#f5d067'; ctx.fillText('VS', 512, 438);
@@ -497,10 +510,10 @@ function flagTexture(blue) {
   return bannerTexture(512, 768, (ctx, w, h) => {
     const g = ctx.createLinearGradient(0, 0, w, h);
     if (blue) { g.addColorStop(0, '#0a2a8a'); g.addColorStop(0.5, '#1f5fff'); g.addColorStop(1, '#07123a'); }
-    else { g.addColorStop(0, '#5a0710'); g.addColorStop(0.5, '#e0262f'); g.addColorStop(1, '#2a0409'); }
+    else { g.addColorStop(0, '#0b0b0e'); g.addColorStop(0.5, '#4a3608'); g.addColorStop(1, '#0b0b0e'); }
     ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
     for (let i = 0; i < 14; i++) {
-      ctx.strokeStyle = blue ? `rgba(130,180,255,${0.08 + (i % 4) * 0.05})` : `rgba(255,150,140,${0.08 + (i % 4) * 0.05})`;
+      ctx.strokeStyle = blue ? `rgba(130,180,255,${0.08 + (i % 4) * 0.05})` : `rgba(255,200,70,${0.08 + (i % 4) * 0.05})`;
       ctx.lineWidth = 6 + (i % 5) * 7;
       ctx.beginPath(); ctx.moveTo(-20, i * 60); ctx.bezierCurveTo(w * 0.3, i * 60 - 140, w * 0.6, i * 60 + 160, w + 20, i * 60 - 60); ctx.stroke();
     }
@@ -514,8 +527,8 @@ function flagTexture(blue) {
       ctx.font = '700 44px "Arial Black", sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText('BILIBILI GAMING', 256, 470);
     } else {
       ctx.font = 'italic 900 170px Impact, "Arial Black", sans-serif';
-      ctx.lineWidth = 12; ctx.strokeStyle = '#2a0409'; ctx.lineJoin = 'round';
-      ctx.strokeText('GENG', 256, 400); ctx.fillStyle = '#fff'; ctx.fillText('GENG', 256, 400);
+      ctx.lineWidth = 12; ctx.strokeStyle = '#000'; ctx.lineJoin = 'round';
+      ctx.strokeText('GENG', 256, 400); ctx.fillStyle = '#f4c542'; ctx.fillText('GENG', 256, 400);
     }
   });
 }
@@ -546,11 +559,11 @@ function buildRoom() {
   // sàn: nửa xanh (BLG) – nửa đỏ (GENG), thảm giữa
   const fl = new THREE.Mesh(new THREE.PlaneGeometry(16, 32), L(0x0a1230));
   fl.rotation.x = -Math.PI / 2; fl.position.set(-8, 0, 2); scene.add(fl);
-  const fr = new THREE.Mesh(new THREE.PlaneGeometry(16, 32), L(0x2a0a12));
+  const fr = new THREE.Mesh(new THREE.PlaneGeometry(16, 32), L(0x17120a));
   fr.rotation.x = -Math.PI / 2; fr.position.set(8, 0, 2); scene.add(fr);
   const back = new THREE.Mesh(new THREE.PlaneGeometry(32, H), L(0x090b15)); back.position.set(0, H / 2, -14); scene.add(back);
   const left = new THREE.Mesh(new THREE.PlaneGeometry(32, H), L(0x08163f)); left.rotation.y = Math.PI / 2; left.position.set(-16, H / 2, 2); scene.add(left);
-  const right = new THREE.Mesh(new THREE.PlaneGeometry(32, H), L(0x40091a)); right.rotation.y = -Math.PI / 2; right.position.set(16, H / 2, 2); scene.add(right);
+  const right = new THREE.Mesh(new THREE.PlaneGeometry(32, H), L(0x1c1608)); right.rotation.y = -Math.PI / 2; right.position.set(16, H / 2, 2); scene.add(right);
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(32, 32), L(0x05060c)); ceil.rotation.x = Math.PI / 2; ceil.position.set(0, H, 2); scene.add(ceil);
 
   // màn hình chiếu: "lỗ" trong suốt ở WebGL để lộ iframe YouTube (CSS3D) phía sau
@@ -589,7 +602,7 @@ function buildRoom() {
   // đèn màu + ánh sáng
   const mkL = (c, i, d, x, y, z) => { const l = new THREE.PointLight(c, i, d); l.position.set(x, y, z); scene.add(l); };
   mkL(0x3d6bff, 260, 45, -9, 11, 0);
-  mkL(0xff3b45, 260, 45, 9, 11, 0);
+  mkL(0xffbf33, 260, 45, 9, 11, 0);
   mkL(0xaabbff, 60, 30, 0, 8, -9);
 
   // giàn đèn + chùm sáng quét
@@ -597,11 +610,11 @@ function buildRoom() {
   for (const x of [-12, -6, 6, 12]) {
     const t = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 32), trussM); t.position.set(x, H - 0.6, 2); scene.add(t);
     for (let z = -12; z <= 14; z += 3.2) {
-      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshBasicMaterial({ color: x < 0 ? 0x7aa2ff : 0xff7a80 }));
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshBasicMaterial({ color: x < 0 ? 0x7aa2ff : 0xffd36b }));
       lamp.position.set(x, H - 0.9, z); scene.add(lamp);
     }
   }
-  [[-12, 0x3d7bff], [-6, 0x6fa0ff], [6, 0xff6068], [12, 0xff3b45]].forEach(([x, c], i) => {
+  [[-12, 0x3d7bff], [-6, 0x6fa0ff], [6, 0xffd45a], [12, 0xffb830]].forEach(([x, c], i) => {
     for (let z = -9; z <= 11; z += 6.7) {
       const geo = new THREE.ConeGeometry(2.4, H - 1, 24, 1, true);
       geo.rotateX(Math.PI); geo.translate(0, -(H - 1) / 2, 0);
@@ -655,7 +668,7 @@ function buildRoom() {
     }
     return grp;
   }
-  const rowsZ = [-7.5, -4, -0.5, 3, 6.5, 10], setsX = [-6.5, 6.5], sideColors = [0x1a4fd6, 0xd0202a];
+  const rowsZ = [-7.5, -4, -0.5, 3, 6.5, 10], setsX = [-6.5, 6.5], sideColors = [0x1a4fd6, 0xd8a313];
   rowsZ.forEach((z, r) => {
     setsX.forEach((cx, si) => {
       const a = makeSofa(sideColors[si]); a.position.set(cx - 2.0, 0, z);
@@ -674,7 +687,7 @@ function buildRoom() {
   // thảm lối đi giữa + dải đèn LED
   const carpet = new THREE.Mesh(new THREE.PlaneGeometry(6, 28), L(0x0d1020));
   carpet.rotation.x = -Math.PI / 2; carpet.position.set(0, 0.01, 1); scene.add(carpet);
-  for (const [x, c] of [[-2.9, 0x4d86ff], [-2.6, 0xf0c84b], [2.6, 0xf0c84b], [2.9, 0xff4d55]]) {
+  for (const [x, c] of [[-2.9, 0x4d86ff], [-2.6, 0xf0c84b], [2.6, 0xf0c84b], [2.9, 0xffe08a]]) {
     const trim = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 28), new THREE.MeshBasicMaterial({ color: c }));
     trim.rotation.x = -Math.PI / 2; trim.position.set(x, 0.02, 1); scene.add(trim);
   }
@@ -684,12 +697,117 @@ function buildRoom() {
   // dải LED dọc tường
   for (let z = -11; z <= 13; z += 4) {
     for (const s of [-1, 1]) {
-      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 12, 0.18), new THREE.MeshBasicMaterial({ color: s < 0 ? 0x5a8fff : 0xff5a62 }));
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 12, 0.18), new THREE.MeshBasicMaterial({ color: s < 0 ? 0x5a8fff : 0xffc94d }));
       strip.position.set(s * 15.9, 8, z); scene.add(strip);
     }
   }
 }
 buildRoom();
+
+/* ================= Khu trò chơi phía sau: bi-a, bóng bàn, sàn nhảy Audition ================= */
+const POOL_C = { x: -9.5, z: 15.2 }, PP_C = { x: 9.5, z: 15.2 }, DANCE_C = { x: 0, z: 15.2 };
+const PL = 3.0, PW = 1.5, BR = 0.065, SURF = 0.92;
+const BALL_COLORS = [0xffffff, 0xf4d03f, 0x2e6bd6, 0xd62e2e, 0x7d3cc4, 0xf08a24, 0x1f9d55, 0x8b1a1a, 0x111111, 0xf4d03f, 0x2e6bd6];
+const game = { poolBalls: [], poolPos: [], poolMoving: false, tiles: [], ppBall: null, ppFlight: null, board: null, cue: null, aimLine: null, mirror: null };
+
+function buildGameZone() {
+  const L = (c) => new THREE.MeshLambertMaterial({ color: c });
+  const BM = (c) => new THREE.MeshBasicMaterial({ color: c });
+  const put = (parent, geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); parent.add(m); return m; };
+
+  // tường sau + biển neon
+  const bw = new THREE.Mesh(new THREE.PlaneGeometry(32, 18), L(0x0a0b14)); bw.rotation.y = Math.PI; bw.position.set(0, 9, 18); scene.add(bw);
+  const signTex = bannerTexture(1024, 200, (ctx, w, h) => {
+    ctx.textAlign = 'center'; ctx.font = '900 100px "Arial Black", sans-serif';
+    ctx.shadowColor = '#ff4df0'; ctx.shadowBlur = 30; ctx.fillStyle = '#ffe3fc';
+    ctx.fillText('🎱 KHU TRÒ CHƠI 🏓', 512, 130);
+  });
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(12, 12 * 200 / 1024), new THREE.MeshBasicMaterial({ map: signTex, transparent: true, fog: false }));
+  sign.rotation.y = Math.PI; sign.position.set(0, 8.5, 17.9); scene.add(sign);
+  for (const [c, y] of [[0xff4df0, 7.2], [0x4de1ff, 9.8]]) {
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(14, 0.08, 0.08), BM(c)); strip.position.set(0, y, 17.9); scene.add(strip);
+  }
+
+  /* ---- Bàn bi-a ---- */
+  const pool = new THREE.Group(); pool.position.set(POOL_C.x, 0, POOL_C.z);
+  const wood = L(0x4a2a14), felt = L(0x0b6a3b);
+  put(pool, new THREE.BoxGeometry(3.5, 0.3, 2.0), wood, 0, 0.78, 0);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) put(pool, new THREE.BoxGeometry(0.2, 0.65, 0.2), wood, sx * 1.6, 0.33, sz * 0.88);
+  for (const sz of [-1, 1]) put(pool, new THREE.BoxGeometry(3.5, 0.12, 0.25), wood, 0, 0.99, sz * 0.875);
+  for (const sx of [-1, 1]) put(pool, new THREE.BoxGeometry(0.25, 0.12, 2.0), wood, sx * 1.625, 0.99, 0);
+  const f = put(pool, new THREE.PlaneGeometry(PL, PW), felt, 0, SURF + 0.001, 0); f.rotation.x = -Math.PI / 2;
+  for (const [px, py] of [[-PL / 2, -PW / 2], [0, -PW / 2], [PL / 2, -PW / 2], [-PL / 2, PW / 2], [0, PW / 2], [PL / 2, PW / 2]]) {
+    const h = put(pool, new THREE.CircleGeometry(0.12, 20), BM(0x050505), px, SURF + 0.004, py); h.rotation.x = -Math.PI / 2;
+  }
+  for (let i = 0; i < 11; i++) {
+    const b = new THREE.Mesh(new THREE.SphereGeometry(BR, 20, 14), new THREE.MeshPhongMaterial({ color: BALL_COLORS[i], shininess: 80 }));
+    b.position.set(0, SURF + BR, 0); scene.add(b); game.poolBalls.push(b);
+    if (i >= 9) { const st = new THREE.Mesh(new THREE.SphereGeometry(BR * 1.01, 16, 10, 0, 6.3, 1.2, 0.5), new THREE.MeshPhongMaterial({ color: 0xffffff })); b.add(st); }
+  }
+  // đèn treo trên bàn
+  put(pool, new THREE.CylinderGeometry(0.02, 0.02, 3, 6), BM(0x222222), 0, 3.8, 0);
+  put(pool, new THREE.ConeGeometry(0.9, 0.4, 20, 1, true), new THREE.MeshLambertMaterial({ color: 0x1a1a1a, side: THREE.DoubleSide }), 0, 2.4, 0);
+  put(pool, new THREE.CircleGeometry(0.7, 20), BM(0xfff0c0), 0, 2.38, 0).rotation.x = Math.PI / 2;
+  pool.userData.gameId = 'pool'; scene.add(pool); clickables.push(pool);
+  const pl1 = new THREE.PointLight(0xfff0c0, 55, 11); pl1.position.set(POOL_C.x, 2.2, POOL_C.z); scene.add(pl1);
+  // gậy + đường ngắm
+  const cue = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.022, 1.5, 8).rotateZ(Math.PI / 2), L(0xd9a066)); cue.visible = false; scene.add(cue); game.cue = cue;
+  const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(1, 0, 0)]);
+  const al = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 })); al.visible = false; al.frustumCulled = false; scene.add(al); game.aimLine = al;
+
+  /* ---- Bàn bóng bàn ---- */
+  const pp = new THREE.Group(); pp.position.set(PP_C.x, 0, PP_C.z);
+  put(pp, new THREE.BoxGeometry(3.0, 0.07, 1.7), L(0x14508c), 0, 0.76, 0);
+  const ln = BM(0xffffff);
+  put(pp, new THREE.PlaneGeometry(3.0, 0.03), ln, 0, 0.797, 0).rotation.x = -Math.PI / 2;
+  for (const sz of [-1, 1]) put(pp, new THREE.PlaneGeometry(3.0, 0.03), ln, 0, 0.797, sz * 0.84).rotation.x = -Math.PI / 2;
+  for (const sx of [-1, 1]) put(pp, new THREE.PlaneGeometry(0.03, 1.7), ln, sx * 1.485, 0.797, 0).rotation.x = -Math.PI / 2;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) put(pp, new THREE.BoxGeometry(0.1, 0.72, 0.1), L(0x222222), sx * 1.35, 0.36, sz * 0.7);
+  put(pp, new THREE.BoxGeometry(0.015, 0.17, 1.85), new THREE.MeshLambertMaterial({ color: 0xeeeeee, transparent: true, opacity: 0.55 }), 0, 0.885, 0);
+  for (const sz of [-1, 1]) put(pp, new THREE.CylinderGeometry(0.02, 0.02, 0.2, 8), L(0x333333), 0, 0.88, sz * 0.93);
+  pp.userData.gameId = 'pp'; scene.add(pp); clickables.push(pp);
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 10), BM(0xfff2c8)); ball.visible = false; scene.add(ball); game.ppBall = ball;
+  const c = document.createElement('canvas'); c.width = 512; c.height = 160;
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const board = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  board.scale.set(2.6, 0.81, 1); board.position.set(PP_C.x, 2.0, PP_C.z); board.renderOrder = 10; scene.add(board);
+  game.board = { c, tex };
+  drawBoard(null, null, [0, 0]);
+  const pl2 = new THREE.PointLight(0x7fe9ff, 35, 10); pl2.position.set(PP_C.x, 2.6, PP_C.z); scene.add(pl2);
+
+  /* ---- Sàn nhảy Audition ---- */
+  const dance = new THREE.Group(); dance.position.set(DANCE_C.x, 0, DANCE_C.z);
+  put(dance, new THREE.BoxGeometry(5.2, 0.08, 5.2), L(0x120f1c), 0, 0.04, 0);
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), new THREE.MeshBasicMaterial({ color: 0x331a55 }));
+    m.rotation.x = -Math.PI / 2; m.position.set((i - 1.5) * 1.2, 0.085, (j - 1.5) * 1.2); dance.add(m); game.tiles.push({ m, i, j });
+  }
+  const arrowTex = bannerTexture(512, 512, (ctx) => {
+    ctx.textAlign = 'center'; ctx.font = '900 90px "Arial Black"'; ctx.fillStyle = 'rgba(255,255,255,.9)';
+    ctx.fillText('←', 170, 270); ctx.fillText('→', 342, 270); ctx.fillText('↑', 256, 190); ctx.fillText('↓', 256, 350);
+    ctx.font = '900 46px "Arial Black"'; ctx.fillText('AUDITION', 256, 60);
+  });
+  const ov = put(dance, new THREE.PlaneGeometry(5, 5), new THREE.MeshBasicMaterial({ map: arrowTex, transparent: true }), 0, 0.09, 0); ov.rotation.x = -Math.PI / 2;
+  for (const [c2, x, z, w, d] of [[0xff4df0, 0, -2.6, 5.4, 0.08], [0x4de1ff, 0, 2.6, 5.4, 0.08], [0xff4df0, -2.6, 0, 0.08, 5.4], [0x4de1ff, 2.6, 0, 0.08, 5.4]])
+    put(dance, new THREE.BoxGeometry(w, 0.12, d), BM(c2), x, 0.1, z);
+  dance.userData.gameId = 'dance'; scene.add(dance); clickables.push(dance);
+  // quả cầu disco + đèn
+  const mirror = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 12), new THREE.MeshPhongMaterial({ color: 0xdddddd, shininess: 100, flatShading: true }));
+  mirror.position.set(DANCE_C.x, 7, DANCE_C.z); scene.add(mirror); game.mirror = mirror;
+  put(scene, new THREE.CylinderGeometry(0.02, 0.02, 11, 6), BM(0x333333), DANCE_C.x, 12.5, DANCE_C.z);
+  const pl3 = new THREE.PointLight(0xc060ff, 70, 14); pl3.position.set(DANCE_C.x, 4, DANCE_C.z); scene.add(pl3); game.danceLight = pl3;
+}
+function drawBoard(nameA, nameB, score) {
+  const { c, tex } = game.board, x = c.getContext('2d');
+  x.clearRect(0, 0, c.width, c.height);
+  x.fillStyle = 'rgba(0,0,0,.65)'; x.beginPath(); x.roundRect(0, 0, 512, 160, 24); x.fill();
+  x.textAlign = 'center'; x.fillStyle = '#fff'; x.font = '900 40px "Arial Black", sans-serif';
+  x.fillText(`${score[0]}  :  ${score[1]}`, 256, 70);
+  x.font = '700 26px sans-serif'; x.fillStyle = '#ffd166';
+  x.fillText(`🏓 ${nameA || '🤖 Máy'}`, 120, 130); x.fillText(`${nameB || '🤖 Máy'} 🏓`, 392, 130);
+  tex.needsUpdate = true;
+}
+buildGameZone();
 
 /* ---------------- Game state ---------------- */
 const players = new Map(); // id -> {group, label, bubble, target, moving}
@@ -706,6 +824,8 @@ function addPlayer(p) {
   group.rotation.y = p.ry || 0;
   group.userData.sit = !!p.seat;
   group.userData.pid = p.id;
+  group.userData.dance = !!p.dance;
+  if (p.dance) { dancers.add(p.id); setTimeout(refreshMusic, 0); }
   const label = textSprite(p.name, { size: 44, bg: 'rgba(0,0,0,.45)' });
   label.position.set(0, 3.4, 0);
   group.add(label);
@@ -717,6 +837,7 @@ function removePlayer(id) {
   if (!p) return;
   scene.remove(p.group);
   players.delete(id);
+  dancers.delete(id); refreshMusic();
 }
 function showBubble(id, text) {
   const p = players.get(id);
@@ -731,7 +852,9 @@ function showBubble(id, text) {
 }
 
 /* ---------------- Networking ---------------- */
-socket.on('init', ({ id, players: list, video, tables, chat }) => {
+socket.on('init', ({ id, players: list, video, tables, chat, pool, pp }) => {
+  if (pool) applyPool(pool);
+  if (pp) { ppNames = { A: pp.A, B: pp.B }; ppIds = pp.ids || {}; ppScore = pp.score; drawBoard(pp.A, pp.B, pp.score); }
   for (const m of chat || []) addChat(m.name, m.text, false, true, m.ts);
   myId = id;
   for (const p of list) addPlayer(p);
@@ -878,7 +1001,7 @@ let dragging = false, lx = 0, ly = 0;
 canvas.addEventListener('pointerdown', (e) => { dragging = true; lx = e.clientX; ly = e.clientY; canvas.setPointerCapture(e.pointerId); });
 canvas.addEventListener('pointerup', () => { dragging = false; });
 canvas.addEventListener('pointermove', (e) => {
-  if (!dragging) return;
+  if (!dragging || poolMode) return;
   if (fpMode) {
     camYaw += (e.clientX - lx) * 0.005;
     fpPitch = Math.min(1.2, Math.max(-1.2, fpPitch + (e.clientY - ly) * 0.004));
@@ -908,6 +1031,7 @@ $('enter').onclick = () => {
   let cid = sessionStorage.getItem('cinema-cid');
   if (!cid) { cid = Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem('cinema-cid', cid); }
   socket.emit('join', { room, name, look, cid });
+  try { ensureAudio(); } catch (e) {}
   last = performance.now();
   requestAnimationFrame(loop);
   try { startYT(); } catch (err) { console.error(err); }
@@ -1003,7 +1127,7 @@ function pick(e) {
   const hits = raycaster.intersectObjects(clickables.concat(otherGroups()), true);
   for (const h of hits) {
     let o = h.object;
-    while (o && !o.userData.seatId && !o.userData.tableId && !o.userData.pid) o = o.parent;
+    while (o && !o.userData.seatId && !o.userData.tableId && !o.userData.pid && !o.userData.gameId) o = o.parent;
     if (o) return o.userData;
   }
   return null;
@@ -1094,10 +1218,11 @@ socket.on('attack', ({ from, to, type }) => {
 let downX = 0, downY = 0;
 canvas.addEventListener('pointerdown', (e) => { downX = e.clientX; downY = e.clientY; });
 canvas.addEventListener('pointerup', (e) => {
-  if (fsMode || menuOpen || Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return;
+  if (fsMode || menuOpen || poolMode || gameMode === 'pp' || Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return;
   const u = pick(e);
   closeActionMenu();
   if (!u || !me) return;
+  if (u.gameId) return startGame(u.gameId);
   if (u.pid) return openActionMenu(u.pid, e.clientX, e.clientY);
   if (u.tableId) return openMenu(u.tableId);
   if (u.seatId) {
@@ -1109,7 +1234,7 @@ canvas.addEventListener('pointerup', (e) => {
   }
 });
 canvas.addEventListener('pointermove', (e) => {
-  if (dragging || fsMode || menuOpen || inLobby) return;
+  if (dragging || fsMode || menuOpen || inLobby || poolMode) return;
   canvas.style.cursor = pick(e) ? 'pointer' : 'default';
 });
 
@@ -1202,6 +1327,210 @@ addEventListener('keydown', (e) => {
 });
 socket.on('face', ({ id, face }) => { const p = players.get(id); if (p) p.group.userData.setFace(face); });
 
+/* ---------------- Trò chơi: bi-a / bóng bàn / nhảy Audition ---------------- */
+let gameMode = null, poolMode = false, ppSide = null, ppIds = {}, ppNames = {}, ppScore = [0, 0];
+const hud = $('gameHud');
+function setHud(html, extra) {
+  $('hudText').innerHTML = html;
+  $('powerWrap').classList.toggle('hidden', extra !== 'pool');
+  $('hudReset').classList.toggle('hidden', extra !== 'pool');
+  hud.classList.toggle('hidden', !html);
+}
+const ppEnd = (s) => ({ x: PP_C.x + (s === 'A' ? -2.2 : 2.2), z: PP_C.z });
+function leaveGames() {
+  if (poolMode) { poolMode = false; game.cue.visible = false; game.aimLine.visible = false; charging = 0; }
+  if (ppSide) { socket.emit('pp-leave'); ppSide = null; }
+  if (me && me.dancing) { socket.emit('dance', false); me.dancing = false; }
+  gameMode = null; setHud('');
+}
+function startGame(id) {
+  if (!me) return;
+  leaveGames();
+  if (me.sit) { socket.emit('stand', { x: me.x, z: me.z - 1.3 }); me.sit = null; me.z -= 1.3; }
+  if (id === 'pool') me.walkTo = { x: POOL_C.x, z: POOL_C.z + 1.75, game: 'pool' };
+  else if (id === 'pp') { const s = me.x < PP_C.x ? 'A' : 'B'; const e = ppEnd(s); me.walkTo = { x: e.x, z: e.z, game: 'pp', side: s }; }
+  else me.walkTo = { x: DANCE_C.x + (Math.random() * 3 - 1.5), z: DANCE_C.z + (Math.random() * 3 - 1.5), game: 'dance' };
+}
+function enterGame(w) {
+  if (w.game === 'pool') {
+    gameMode = 'pool'; poolMode = true; me.ry = Math.PI;
+    setHud('🎱 <b>Bi-a</b>: di chuột để ngắm · <b>giữ chuột rồi thả</b> để đánh · Esc: thoát', 'pool');
+  } else if (w.game === 'pp') {
+    gameMode = 'pp'; ppSide = w.side; me.ry = w.side === 'A' ? Math.PI / 2 : -Math.PI / 2;
+    socket.emit('pp-join', { side: w.side }); refreshPpHud();
+  } else if (w.game === 'pp-pos') {
+    me.ry = w.side === 'A' ? Math.PI / 2 : -Math.PI / 2;
+  } else if (w.game === 'dance') {
+    gameMode = 'dance'; me.dancing = true; socket.emit('dance', true);
+    setHud('💃 <b>Audition</b>: bạn đang nhảy theo nhạc · bấm phím di chuyển hoặc Esc để dừng');
+  }
+}
+function refreshPpHud() {
+  if (gameMode !== 'pp') return;
+  setHud(`🏓 <b>Bóng bàn</b> ${ppNames.A || '🤖 Máy'} ${ppScore[0]} : ${ppScore[1]} ${ppNames.B || '🤖 Máy'} · bóng tới gần thì bấm <b>Space</b> (hoặc click) để đỡ · Esc: thoát`);
+}
+$('hudExit').onclick = leaveGames;
+$('hudReset').onclick = () => socket.emit('pool-reset');
+addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && gameMode && !chatting) leaveGames();
+  if (e.code === 'Space' && gameMode === 'pp' && !chatting && !e.repeat) { e.preventDefault(); ppHit(); }
+});
+let lastPpHit = 0;
+function ppHit() {
+  if (performance.now() - lastPpHit < 450) return;
+  lastPpHit = performance.now();
+  socket.emit('pp-hit');
+  const me2 = players.get(myId); if (me2) me2.group.userData.act = { type: 'punch', t: 0 };
+}
+
+// --- bi-a ---
+let charging = 0, aimAngle = 0;
+const tablePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -SURF);
+const hitPt = new THREE.Vector3();
+function pointerToTable(e) {
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  return raycaster.ray.intersectPlane(tablePlane, hitPt) ? hitPt : null;
+}
+canvas.addEventListener('pointermove', (e) => {
+  if (!poolMode) return;
+  const pt = pointerToTable(e), cb = game.poolPos[0];
+  if (pt && cb) aimAngle = Math.atan2(pt.z - POOL_C.z - cb[1], pt.x - POOL_C.x - cb[0]);
+});
+canvas.addEventListener('pointerdown', (e) => {
+  if (gameMode === 'pp') return ppHit();
+  if (poolMode && !game.poolMoving) {
+    const pt = pointerToTable(e), cb = game.poolPos[0];
+    if (pt && cb) aimAngle = Math.atan2(pt.z - POOL_C.z - cb[1], pt.x - POOL_C.x - cb[0]);
+    charging = performance.now();
+  }
+});
+canvas.addEventListener('pointerup', () => {
+  if (poolMode && charging) {
+    const power = Math.min(1, (performance.now() - charging) / 1100);
+    charging = 0;
+    if (!game.poolMoving) socket.emit('pool-shot', { angle: aimAngle, power });
+  }
+});
+function applyPool(st) {
+  game.poolPos = st.balls; game.poolMoving = st.moving;
+  st.balls.forEach((b, i) => {
+    const m = game.poolBalls[i]; if (!m) return;
+    m.visible = !b[2];
+    m.position.set(POOL_C.x + b[0], SURF + BR, POOL_C.z + b[1]);
+  });
+}
+socket.on('pool', applyPool);
+socket.on('pool-event', ({ text }) => addChat('', text, true));
+
+// --- bóng bàn ---
+socket.on('pp', (s) => {
+  ppNames = { A: s.A, B: s.B }; ppIds = s.ids || {}; ppScore = s.score;
+  drawBoard(s.A, s.B, s.score); refreshPpHud();
+});
+socket.on('pp-side', (slot) => {
+  if (ppSide && slot !== ppSide) { ppSide = slot; const e = ppEnd(slot); me.walkTo = { x: e.x, z: e.z, game: 'pp-pos', side: slot }; }
+});
+socket.on('pp-full', () => { addChat('', 'Bàn bóng bàn đã đủ 2 người chơi 🏓', true); leaveGames(); });
+socket.on('pp-ball', ({ from, to, dur }) => {
+  const fx0 = PP_C.x + (from === 'A' ? -1.25 : 1.25), tx = PP_C.x + (to === 'A' ? -1.25 : 1.25);
+  game.ppFlight = { t: 0, dur, fx: fx0, tx, zr: (Math.random() - 0.5) * 0.9, z0: (Math.random() - 0.5) * 0.7 };
+});
+socket.on('pp-swing', ({ side }) => { const p = players.get(ppIds[side]); if (p) p.group.userData.act = { type: 'punch', t: 0 }; });
+socket.on('pp-miss', ({ side }) => {
+  game.ppFlight = null; game.ppBall.visible = false;
+  spawnFx('❌', { x: PP_C.x + (side === 'A' ? -1.4 : 1.4), z: PP_C.z });
+});
+socket.on('pp-stop', () => { game.ppFlight = null; game.ppBall.visible = false; });
+
+// --- nhạc + sàn nhảy ---
+const dancers = new Set();
+let actx = null, master = null, musicTimer = null, nextT = 0, stepN = 0;
+function ensureAudio() {
+  if (!actx) { actx = new (window.AudioContext || window.webkitAudioContext)(); master = actx.createGain(); master.gain.value = 0; master.connect(actx.destination); }
+  if (actx.state === 'suspended') actx.resume();
+}
+function tone(f, t, d, type, v) {
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type; o.frequency.value = f; g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.001, t + d);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + d + 0.02);
+}
+function kick(t) {
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+  g.gain.setValueAtTime(1, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.22);
+}
+let noiseBuf = null;
+function hat(t, v, d = 0.05) {
+  if (!noiseBuf) { noiseBuf = actx.createBuffer(1, actx.sampleRate * 0.3, actx.sampleRate); const a = noiseBuf.getChannelData(0); for (let i = 0; i < a.length; i++) a[i] = Math.random() * 2 - 1; }
+  const s = actx.createBufferSource(), f = actx.createBiquadFilter(), g = actx.createGain();
+  s.buffer = noiseBuf; f.type = 'highpass'; f.frequency.value = 6000; g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.001, t + d);
+  s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t + d + 0.02);
+}
+const BASS = [55, 55, 82.4, 55, 65.4, 65.4, 98, 65.4], LEAD = [440, 523, 659, 784, 659, 523, 587, 698];
+function playStep(s, t) {
+  if (s % 4 === 0) kick(t);
+  if (s % 8 === 4) hat(t, 0.8, 0.12);
+  if (s % 2 === 0) hat(t, 0.25);
+  const bar = Math.floor(stepN / 16) % 2;
+  if (s % 2 === 1) tone(BASS[(s >> 1) % 8] * (bar ? 1.12 : 1), t, 0.2, 'sawtooth', 0.25);
+  if (s % 2 === 0 || s % 4 === 3) tone(LEAD[(s + bar * 3) % 8], t, 0.12, 'square', 0.07);
+}
+function schedule() { while (nextT < actx.currentTime + 0.15) { playStep(stepN % 16, nextT); nextT += 0.125; stepN++; } }
+function refreshMusic() {
+  if (dancers.size && !musicTimer) { ensureAudio(); nextT = actx.currentTime + 0.05; stepN = 0; musicTimer = setInterval(schedule, 25); }
+  else if (!dancers.size && musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+}
+socket.on('dance', ({ id, on }) => {
+  const p = players.get(id); if (!p) return;
+  p.group.userData.dance = on; p.group.userData.sit = false;
+  if (on) dancers.add(id); else dancers.delete(id);
+  refreshMusic();
+});
+function updateGameVisuals(dt, now) {
+  // nhạc: âm lượng theo khoảng cách tới sàn nhảy
+  if (master && me) {
+    const d = Math.hypot(me.x - DANCE_C.x, me.z - DANCE_C.z);
+    master.gain.value = (voiceMuted || !musicTimer) ? 0 : Math.max(0.06, 1 - d / 26) * 0.22;
+  }
+  // sàn nhảy nhấp nháy theo nhịp
+  const on = !!musicTimer && actx;
+  const beat = on ? actx.currentTime / 0.125 : 0;
+  for (const t of game.tiles) {
+    const col = t.m.material.color;
+    if (on) {
+      const k = ((beat / 4 + t.i + t.j) % 4) / 4;
+      col.setHSL((beat / 32 + (t.i * 4 + t.j) / 16) % 1, 0.9, 0.35 + 0.3 * (1 - k));
+    } else col.setHSL(0.75, 0.5, 0.14 + 0.03 * Math.sin(now / 700 + t.i + t.j));
+  }
+  game.mirror.rotation.y += dt * 0.8;
+  game.danceLight.color.setHSL(on ? (beat / 32) % 1 : 0.78, 1, 0.6);
+  // quả bóng bàn
+  const fl = game.ppFlight;
+  if (fl) {
+    fl.t += dt / fl.dur;
+    const u = Math.min(1, fl.t);
+    game.ppBall.visible = true;
+    game.ppBall.position.set(fl.fx + (fl.tx - fl.fx) * u, 0.86 + Math.sin(u * Math.PI) * 0.45, PP_C.z + fl.z0 + (fl.zr - fl.z0) * u);
+  }
+  // gậy bi-a + đường ngắm
+  const cb = game.poolPos[0];
+  const show = poolMode && !game.poolMoving && cb && !cb[2];
+  game.cue.visible = game.aimLine.visible = !!show;
+  if (show) {
+    const dx = Math.cos(aimAngle), dz = Math.sin(aimAngle);
+    const bx = POOL_C.x + cb[0], bz = POOL_C.z + cb[1], y = SURF + BR;
+    const pull = charging ? Math.min(1, (performance.now() - charging) / 1100) * 0.35 : 0;
+    game.cue.position.set(bx - dx * (0.1 + pull + 0.75), y + 0.03, bz - dz * (0.1 + pull + 0.75));
+    game.cue.rotation.y = -aimAngle;
+    const pos = game.aimLine.geometry.attributes.position;
+    pos.setXYZ(0, bx, y, bz); pos.setXYZ(1, bx + dx * 1.6, y, bz + dz * 1.6); pos.needsUpdate = true;
+    $('powerBar').style.width = (charging ? Math.min(100, (performance.now() - charging) / 11) : 0) + '%';
+  }
+}
+
 /* ---------------- Main loop ---------------- */
 let last = 0, sendT = 0, lastSent = '';
 function loop(now) {
@@ -1218,6 +1547,7 @@ function loop(now) {
       if (keys['d'] || keys['arrowright']) r += 1;
       if (keys['a'] || keys['arrowleft']) r -= 1;
     }
+    if ((f || r) && gameMode) leaveGames();
     // đứng dậy khi bấm phím di chuyển
     if ((f || r) && me.sit) {
       const s = seatsInfo.get(me.sit);
@@ -1236,6 +1566,7 @@ function loop(now) {
         const w = me.walkTo; me.walkTo = null;
         if (w.seat) socket.emit('sit', { seat: w.seat, x: me.x, z: me.z });
         else if (w.attack) doAttack(w.attack.type, w.attack.tid);
+        else if (w.game) enterGame(w);
       } else {
         const step = Math.min(dist, 5 * dt);
         me.x += wx / dist * step; me.z += wz / dist * step;
@@ -1279,6 +1610,9 @@ function loop(now) {
       const dist = Math.max(4.5 / t, 8 / (t * camera.aspect));
       camera.position.lerp(new THREE.Vector3(0, 7, -13.9 + dist), Math.min(1, dt * 6));
       camera.lookAt(0, 7, -13.9);
+    } else if (poolMode) {
+      camera.position.lerp(new THREE.Vector3(POOL_C.x, 3.5, POOL_C.z + 2.5), Math.min(1, dt * 6));
+      camera.lookAt(POOL_C.x, 0.9, POOL_C.z - 0.1);
     } else if (fpMode) {
       camera.position.set(me.x, 1.85 + (mine.group.userData.bob || 0), me.z);
       camera.lookAt(
@@ -1292,6 +1626,8 @@ function loop(now) {
         me.z + Math.cos(camYaw) * Math.cos(camPitch) * camDist);
       camera.lookAt(me.x, 1.4, me.z);
     }
+    camera.position.z = Math.min(camera.position.z, 17.6);
+    camera.position.x = Math.min(15.4, Math.max(-15.4, camera.position.x));
     mine.group.visible = !(fpMode && !fsMode);
   }
 
@@ -1307,6 +1643,7 @@ function loop(now) {
     g.position.y = g.userData.bob || 0;
   }
   const tsec = now / 1000;
+  updateGameVisuals(dt, now);
   for (const tr of trophies) tr.rotation.y += dt * 0.7;
   for (const b of beams) b.g.rotation.z = b.base + Math.sin(tsec * 0.6 + b.ph) * 0.12;
   for (let i = fx.length - 1; i >= 0; i--) {

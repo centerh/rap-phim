@@ -86,3 +86,8 @@ body.fs #scene { pointer-events: none; }
 #emoteBar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 20; display: flex; gap: 4px; opacity: .55; transition: opacity .2s; }
 #emoteBar:hover { opacity: 1; }
 #emoteBar button { padding: 4px 7px; font-size: 20px; background: rgba(0,0,0,.45); }
+
+#gameHud { position: fixed; left: 50%; bottom: 62px; transform: translateX(-50%); z-index: 36; background: rgba(0,0,0,.65); border: 1px solid #c9a227;
+  border-radius: 14px; padding: 8px 14px; display: flex; gap: 10px; align-items: center; font-size: 14px; max-width: 94vw; flex-wrap: wrap; justify-content: center; }
+#powerWrap { width: 140px; height: 12px; background: #333; border-radius: 6px; overflow: hidden; }
+#powerBar { height: 100%; width: 0; background: linear-gradient(90deg, #4cd964, #ffcc00, #ff3b30); }
