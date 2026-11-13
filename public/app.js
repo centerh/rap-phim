@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { Arcade } from './arcade.js';
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 const $ = (id) => document.getElementById(id);
 const socket = io ? io() : null;
@@ -774,7 +776,6 @@ function buildGameZone() {
   board.scale.set(2.6, 0.81, 1); board.position.set(PP_C.x, 2.0, PP_C.z); board.renderOrder = 10; scene.add(board);
   game.board = { c, tex };
   drawBoard(null, null, [0, 0]);
-  const pl2 = new THREE.PointLight(0x7fe9ff, 35, 10); pl2.position.set(PP_C.x, 2.6, PP_C.z); scene.add(pl2);
 
   /* ---- Sàn nhảy Audition ---- */
   const dance = new THREE.Group(); dance.position.set(DANCE_C.x, 0, DANCE_C.z);
@@ -809,6 +810,95 @@ function drawBoard(nameA, nameB, score) {
   tex.needsUpdate = true;
 }
 buildGameZone();
+
+/* ================= Máy gắp thú + máy game console ================= */
+const CLAW_M = { x: -15.1, z: 14.5 };                       // máy gắp: sát tường trái, quay mặt về +x
+const ARCADES = [{ x: 15.1, z: 13.6 }, { x: 15.1, z: 16.3 }]; // máy console: sát tường phải, quay mặt về -x
+const CLAW_TOP = 2.35, CLAW_LOW = 1.22, CLAW_REST_Y = 1.1;
+game.claw = null;
+
+function mulberry(a) { return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+function buildMachines() {
+  const L = (c) => new THREE.MeshLambertMaterial({ color: c });
+  const BM = (c) => new THREE.MeshBasicMaterial({ color: c });
+  const put = (parent, geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); parent.add(m); return m; };
+
+  /* ---- Máy gắp thú ---- */
+  const g = new THREE.Group(); g.position.set(CLAW_M.x, 0, CLAW_M.z); g.rotation.y = Math.PI / 2;
+  put(g, new THREE.BoxGeometry(1.5, 0.95, 1.5), L(0xff4fa3), 0, 0.475, 0);
+  put(g, new THREE.BoxGeometry(1.56, 0.06, 1.56), BM(0xffe14d), 0, 0.96, 0);
+  put(g, new THREE.BoxGeometry(1.3, 0.12, 0.5), L(0x7a1f55), 0, 0.9, 0.62).rotation.x = 0.2;
+  put(g, new THREE.CylinderGeometry(0.02, 0.02, 0.18, 8), L(0xdddddd), -0.3, 1.0, 0.64);
+  put(g, new THREE.SphereGeometry(0.06, 12, 10), L(0xe11d48), -0.3, 1.1, 0.64);
+  put(g, new THREE.CylinderGeometry(0.07, 0.07, 0.05, 16), L(0xfacc15), 0.3, 0.98, 0.64);
+  put(g, new THREE.BoxGeometry(0.42, 0.34, 0.04), BM(0x120818), -0.45, 0.4, 0.76);    // cửa nhận thú
+  put(g, new THREE.PlaneGeometry(1.46, 0.001), BM(0xffffff), 0, 0.01, 0);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) put(g, new THREE.BoxGeometry(0.05, 1.65, 0.05), BM(0xffe14d), sx * 0.74, 1.8, sz * 0.74);
+  const glass = new THREE.MeshLambertMaterial({ color: 0xbfe6ff, transparent: true, opacity: 0.12, side: THREE.DoubleSide });
+  for (const [x, z, ry] of [[0, 0.74, 0], [0, -0.74, 0], [0.74, 0, Math.PI / 2], [-0.74, 0, Math.PI / 2]]) put(g, new THREE.PlaneGeometry(1.48, 1.62), glass, x, 1.8, z).rotation.y = ry;
+  put(g, new THREE.BoxGeometry(1.56, 0.4, 1.56), L(0x6d28d9), 0, 2.85, 0);
+  const signTex = bannerTexture(512, 128, (ctx) => {
+    ctx.fillStyle = '#1b0a3a'; ctx.fillRect(0, 0, 512, 128); ctx.textAlign = 'center'; ctx.font = '900 62px "Arial Black"';
+    ctx.shadowColor = '#ff4df0'; ctx.shadowBlur = 18; ctx.fillStyle = '#ffe3fc'; ctx.fillText('🧸 GẮP THÚ', 256, 90);
+  });
+  put(g, new THREE.PlaneGeometry(1.4, 0.35), new THREE.MeshBasicMaterial({ map: signTex }), 0, 2.85, 0.79);
+  put(g, new THREE.BoxGeometry(1.5, 0.05, 1.5), L(0x333333), 0, 2.6, 0);
+  // thú bông
+  const rand = mulberry(77), plushCols = [0xf4a261, 0xe76f51, 0x8ecae6, 0xffb703, 0xcdb4db, 0xb7e4c7, 0xffafcc, 0xa8dadc];
+  const toys = [], placed = [];
+  while (toys.length < 14) {
+    const x = (rand() - 0.5) * 1.1, z = (rand() - 0.5) * 1.1;
+    if ((x < -0.25 && z > 0.2) || placed.some(([a, b]) => Math.hypot(a - x, b - z) < 0.24)) continue;
+    placed.push([x, z]);
+    const tg = new THREE.Group(), col = plushCols[toys.length % plushCols.length], m = L(col);
+    put(tg, new THREE.SphereGeometry(0.13, 14, 10), m, 0, 0, 0);
+    put(tg, new THREE.SphereGeometry(0.1, 14, 10), m, 0, 0.18, 0);
+    for (const s of [-1, 1]) { put(tg, new THREE.SphereGeometry(0.04, 8, 6), m, s * 0.08, 0.27, 0); put(tg, new THREE.SphereGeometry(0.014, 6, 6), BM(0x111111), s * 0.04, 0.2, 0.09); }
+    put(tg, new THREE.SphereGeometry(0.03, 8, 6), L(0xffffff), 0, 0.15, 0.095);
+    tg.position.set(x, CLAW_REST_Y, z); tg.rotation.y = rand() * 6;
+    g.add(tg); toys.push({ mesh: tg, base: [x, z], rest: [x, z], hidden: false });
+  }
+  // móc
+  const clawG = new THREE.Group(); g.add(clawG);
+  put(clawG, new THREE.CylinderGeometry(0.08, 0.1, 0.08, 14), L(0xcccccc), 0, 0, 0);
+  const cable = put(g, new THREE.CylinderGeometry(0.008, 0.008, 1, 6), BM(0x999999), 0, 2.5, 0);
+  const prongs = [];
+  for (let i = 0; i < 3; i++) {
+    const piv = new THREE.Group(); piv.rotation.y = (i * Math.PI * 2) / 3; piv.position.y = -0.04;
+    const p2 = new THREE.Group(); p2.position.x = 0.07; piv.add(p2);
+    put(p2, new THREE.BoxGeometry(0.035, 0.26, 0.035), L(0xdddddd), 0, -0.13, 0);
+    clawG.add(piv); prongs.push(p2);
+  }
+  g.userData.gameId = 'claw'; g.userData.mx = CLAW_M.x; g.userData.mz = CLAW_M.z;
+  scene.add(g); clickables.push(g);
+  const lc = new THREE.PointLight(0xff9de0, 22, 7); lc.position.set(CLAW_M.x + 1.2, 2, CLAW_M.z); scene.add(lc);
+  game.claw = { g, clawG, cable, prongs, toys, s: { x: -0.5, y: CLAW_TOP, z: 0.5, open: 1, hold: -1 }, t: { x: -0.5, y: CLAW_TOP, z: 0.5, open: 1, hold: -1 }, prevHold: -1 };
+
+  /* ---- Máy game console (2 máy) ---- */
+  const scrTex = bannerTexture(256, 192, (ctx) => {
+    ctx.fillStyle = '#080d24'; ctx.fillRect(0, 0, 256, 192);
+    for (let y = 0; y < 192; y += 4) { ctx.fillStyle = 'rgba(255,255,255,.04)'; ctx.fillRect(0, y, 256, 1); }
+    ctx.textAlign = 'center'; ctx.fillStyle = '#7dd3fc'; ctx.font = '900 34px "Arial Black"'; ctx.fillText('ARCADE', 128, 50);
+    ctx.font = '38px sans-serif'; ctx.fillText('🧱 🐴 🛡️', 128, 110); ctx.fillText('🏎️ 💣', 128, 160);
+  });
+  for (const a of ARCADES) {
+    const m = new THREE.Group(); m.position.set(a.x, 0, a.z); m.rotation.y = -Math.PI / 2;
+    put(m, new THREE.BoxGeometry(0.95, 1.9, 0.85), L(0x1e1b4b), 0, 0.95, 0);
+    put(m, new THREE.BoxGeometry(1.0, 0.18, 0.9), L(0x7c3aed), 0, 1.99, 0);
+    put(m, new THREE.PlaneGeometry(0.8, 0.14), BM(0xff4df0), 0, 1.99, 0.46);
+    put(m, new THREE.BoxGeometry(0.78, 0.6, 0.06), L(0x0a0a14), 0, 1.5, 0.42);
+    put(m, new THREE.PlaneGeometry(0.68, 0.51), new THREE.MeshBasicMaterial({ map: scrTex }), 0, 1.5, 0.455);
+    put(m, new THREE.BoxGeometry(0.9, 0.12, 0.5), L(0x312e81), 0, 1.0, 0.5).rotation.x = 0.35;
+    put(m, new THREE.CylinderGeometry(0.02, 0.02, 0.12, 8), L(0xdddddd), -0.2, 1.12, 0.52);
+    put(m, new THREE.SphereGeometry(0.05, 12, 10), L(0xef4444), -0.2, 1.2, 0.52);
+    for (const [x, c] of [[0.05, 0x22c55e], [0.17, 0xfacc15], [0.29, 0x3b82f6]]) put(m, new THREE.CylinderGeometry(0.035, 0.035, 0.03, 12), L(c), x, 1.08, 0.5);
+    for (const s of [-1, 1]) put(m, new THREE.BoxGeometry(0.03, 1.8, 0.03), BM(s < 0 ? 0x4de1ff : 0xff4df0), s * 0.48, 0.95, 0.43);
+    m.userData.gameId = 'arcade'; m.userData.mx = a.x; m.userData.mz = a.z;
+    scene.add(m); clickables.push(m);
+  }
+}
+buildMachines();
 
 /* ---------------- Game state ---------------- */
 const players = new Map(); // id -> {group, label, bubble, target, moving}
@@ -887,7 +977,8 @@ function showBubble(id, text) {  const p = players.get(id);
 }
 
 /* ---------------- Networking ---------------- */
-socket.on('init', ({ id, players: list, video, tables, chat, pool, pp }) => {
+socket.on('init', ({ id, players: list, video, tables, chat, pool, pp, clawState }) => {
+  if (clawState && game.claw) { Object.assign(game.claw.s, clawState); game.claw.t = Object.assign({}, clawState); game.claw.prevHold = clawState.hold; }
   if (pool) applyPool(pool);
   if (pp) { ppNames = { A: pp.A, B: pp.B }; ppIds = pp.ids || {}; ppScore = pp.score; drawBoard(pp.A, pp.B, pp.score); }
   for (const m of chat || []) addChat(m.name, m.text, false, true, m.ts);
@@ -1272,7 +1363,7 @@ canvas.addEventListener('pointerup', (e) => {
   const u = pick(e);
   closeActionMenu();
   if (!u || !me) return;
-  if (u.gameId) return startGame(u.gameId);
+  if (u.gameId) return startGame(u.gameId, u);
   if (u.pid) return openActionMenu(u.pid, e.clientX, e.clientY);
   if (u.tableId) return openMenu(u.tableId);
   if (u.seatId) {
@@ -1391,14 +1482,18 @@ function leaveGames() {
   if (poolMode) { poolMode = false; game.cue.visible = false; game.aimLine.visible = false; charging = 0; }
   if (ppSide) { socket.emit('pp-leave'); ppSide = null; }
   if (me && me.dancing) { socket.emit('dance', false); me.dancing = false; }
+  if (clawJoined) { socket.emit('claw-leave'); clawJoined = false; }
+  if (Arcade.isOpen) Arcade.close();
   gameMode = null; setHud('');
 }
-function startGame(id) {
+function startGame(id, u) {
   if (!me) return;
   leaveGames();
   if (me.sit) { socket.emit('stand', { x: me.x, z: me.z - 1.3 }); me.sit = null; me.z -= 1.3; }
   if (id === 'pool') me.walkTo = { x: POOL_C.x, z: POOL_C.z + 1.75, game: 'pool' };
   else if (id === 'pp') { const s = me.x < PP_C.x ? 'A' : 'B'; const e = ppEnd(s); me.walkTo = { x: e.x, z: e.z, game: 'pp', side: s }; }
+  else if (id === 'claw') me.walkTo = { x: CLAW_M.x + 1.8, z: CLAW_M.z, game: 'claw' };
+  else if (id === 'arcade') me.walkTo = { x: 13.6, z: u ? u.mz : 14.5, game: 'arcade' };
   else me.walkTo = { x: DANCE_C.x + (Math.random() * 3 - 1.5), z: DANCE_C.z + (Math.random() * 3 - 1.5), game: 'dance' };
 }
 function enterGame(w) {
@@ -1410,6 +1505,12 @@ function enterGame(w) {
     socket.emit('pp-join', { side: w.side }); refreshPpHud();
   } else if (w.game === 'pp-pos') {
     me.ry = w.side === 'A' ? Math.PI / 2 : -Math.PI / 2;
+  } else if (w.game === 'claw') {
+    gameMode = 'claw'; me.ry = -Math.PI / 2; clawJoined = true; startClawCtl(); socket.emit('claw-join');
+    setHud('🧸 <b>Máy gắp thú</b>: <b>WASD / mũi tên</b> di chuyển móc · <b>Space</b> thả móc · Esc: thoát');
+  } else if (w.game === 'arcade') {
+    gameMode = 'arcade'; me.ry = Math.PI / 2; menuOpen = true;
+    Arcade.open(() => { menuOpen = false; leaveGames(); });
   } else if (w.game === 'dance') {
     gameMode = 'dance'; me.dancing = true; socket.emit('dance', true);
     setHud('💃 <b>Audition</b>: bạn đang nhảy theo nhạc · bấm phím di chuyển hoặc Esc để dừng');
@@ -1424,6 +1525,7 @@ $('hudReset').onclick = () => socket.emit('pool-reset');
 addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && gameMode && !chatting) leaveGames();
   if (e.code === 'Space' && gameMode === 'pp' && !chatting && !e.repeat) { e.preventDefault(); ppHit(); }
+  if (e.code === 'Space' && gameMode === 'claw' && !chatting && !e.repeat) { e.preventDefault(); clawDrop(); }
 });
 let lastPpHit = 0;
 function ppHit() {
@@ -1540,6 +1642,7 @@ socket.on('dance', ({ id, on }) => {
   refreshMusic();
 });
 function updateGameVisuals(dt, now) {
+  if (game.claw) clawTick(dt);
   // nhạc: âm lượng theo khoảng cách tới sàn nhảy
   if (master && me) {
     const d = Math.hypot(me.x - DANCE_C.x, me.z - DANCE_C.z);
@@ -1582,6 +1685,84 @@ function updateGameVisuals(dt, now) {
   }
 }
 
+/* ---------------- Máy gắp thú (đồng bộ nhiều người) + máy console ---------------- */
+let clawJoined = false, clawSendT = 0;
+const ctl = { phase: 'idle', t: 0, hold: -1, dropChecked: false };
+function startClawCtl() {
+  const s = game.claw.s;
+  ctl.hold = s.hold; ctl.dropChecked = false;
+  ctl.phase = s.y < CLAW_TOP - 0.02 ? 'up' : 'idle';
+  if (s.open < 0.5 && ctl.hold < 0) s.open = 1;
+  game.claw.t = s;
+}
+function clawDrop() { if (gameMode === 'claw' && clawJoined && ctl.phase === 'idle') { ctl.phase = 'down'; } }
+socket.on('claw-state', (st) => { if (!clawJoined) game.claw.t = st; });
+socket.on('claw-busy', () => { addChat('', 'Có người đang chơi máy gắp thú 🧸', true); leaveGames(); });
+socket.on('claw-won', ({ toy }) => {
+  const T = game.claw.toys[toy]; if (!T) return;
+  T.hidden = true; T.mesh.visible = false;
+  setTimeout(() => { T.hidden = false; T.mesh.visible = true; T.rest = T.base.slice(); T.mesh.position.set(T.base[0], CLAW_REST_Y, T.base[1]); }, 4500);
+});
+function clawTick(dt) {
+  const C = game.claw, s = C.s;
+  if (clawJoined) {
+    const k = keys;
+    if (ctl.phase === 'idle') {
+      const sp = 0.6 * dt;
+      if (k['a'] || k['arrowleft']) s.x -= sp; if (k['d'] || k['arrowright']) s.x += sp;
+      if (k['w'] || k['arrowup']) s.z -= sp; if (k['s'] || k['arrowdown']) s.z += sp;
+    } else if (ctl.phase === 'down') {
+      s.y -= 0.6 * dt; if (s.y <= CLAW_LOW) { s.y = CLAW_LOW; ctl.phase = 'grab'; ctl.t = 0; }
+    } else if (ctl.phase === 'grab') {
+      ctl.t += dt; s.open = Math.max(0, 1 - ctl.t / 0.5);
+      if (ctl.t >= 0.5) {
+        let best = -1, bd = 9;
+        C.toys.forEach((T, i) => {
+          if (T.hidden) return;
+          const d = Math.hypot(T.mesh.position.x - s.x, T.mesh.position.z - s.z);
+          if (d < bd && T.mesh.position.y < CLAW_REST_Y + 0.05) { bd = d; best = i; }
+        });
+        s.hold = best >= 0 && bd < 0.26 && Math.random() < 0.92 - bd * 1.6 ? best : -1;
+        ctl.phase = 'up'; ctl.dropChecked = false;
+      }
+    } else if (ctl.phase === 'up') {
+      s.y += 0.5 * dt;
+      if (s.hold >= 0 && !ctl.dropChecked && s.y > 1.8) { ctl.dropChecked = true; if (Math.random() < 0.22) { s.hold = -1; addChat('', 'Ối, thú bông tuột mất rồi! 😅', true); } }
+      if (s.y >= CLAW_TOP) { s.y = CLAW_TOP; ctl.phase = 'return'; }
+    } else if (ctl.phase === 'return') {
+      const dx = -0.5 - s.x, dz = 0.5 - s.z, d = Math.hypot(dx, dz);
+      if (d < 0.02) { ctl.phase = 'release'; ctl.t = 0; }
+      else { const st = Math.min(d, 0.6 * dt); s.x += dx / d * st; s.z += dz / d * st; }
+    } else if (ctl.phase === 'release') {
+      ctl.t += dt; s.open = Math.min(1, ctl.t / 0.5);
+      if (ctl.t >= 0.5) {
+        if (s.hold >= 0) { socket.emit('claw-win', { toy: s.hold }); s.hold = -1; }
+        ctl.phase = 'idle'; s.open = 1;
+      }
+    }
+    s.x = clamp(s.x, -0.55, 0.55); s.z = clamp(s.z, -0.55, 0.55);
+    if (ctl.phase !== 'grab' && ctl.phase !== 'release' && s.hold < 0 && ctl.phase !== 'idle') s.open = Math.min(1, s.open + dt * 2);
+    clawSendT += dt;
+    if (clawSendT > 0.07) { clawSendT = 0; socket.emit('claw-state', { x: s.x, y: s.y, z: s.z, open: s.open, hold: s.hold }); }
+  } else {
+    const t = C.t, f = Math.min(1, dt * 12);
+    s.x += (t.x - s.x) * f; s.y += (t.y - s.y) * f; s.z += (t.z - s.z) * f; s.open += (t.open - s.open) * f; s.hold = t.hold;
+  }
+  // hiển thị
+  C.clawG.position.set(s.x, s.y, s.z);
+  const L = CLAW_TOP + 0.2 - s.y;
+  C.cable.scale.y = Math.max(0.01, L); C.cable.position.set(s.x, s.y + L / 2 + 0.04, s.z);
+  const ang = -0.12 + 0.8 * s.open;
+  for (const p of C.prongs) p.rotation.z = ang;
+  if (C.prevHold >= 0 && s.hold !== C.prevHold) { const T = C.toys[C.prevHold]; if (T && !T.hidden) T.rest = [T.mesh.position.x, T.mesh.position.z]; }
+  C.prevHold = s.hold;
+  C.toys.forEach((T, i) => {
+    if (T.hidden) return;
+    if (i === s.hold) { T.mesh.position.set(s.x, s.y - 0.33, s.z); T.mesh.rotation.z = Math.sin(performance.now() / 150) * 0.15; }
+    else { T.mesh.rotation.z = 0; T.mesh.position.x = T.rest[0]; T.mesh.position.z = T.rest[1]; T.mesh.position.y = Math.max(CLAW_REST_Y, T.mesh.position.y - 3 * dt); }
+  });
+}
+
 /* ---------------- Main loop ---------------- */
 let last = 0, sendT = 0, lastSent = '';
 function loop(now) {
@@ -1598,7 +1779,7 @@ function loop(now) {
       if (keys['d'] || keys['arrowright']) r += 1;
       if (keys['a'] || keys['arrowleft']) r -= 1;
     }
-    if ((f || r) && gameMode) leaveGames();
+    if (gameMode === 'claw') { f = 0; r = 0; } else if ((f || r) && gameMode) leaveGames();
     // đứng dậy khi bấm phím di chuyển
     if ((f || r) && me.sit) {
       const s = seatsInfo.get(me.sit);

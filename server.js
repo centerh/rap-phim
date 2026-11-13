@@ -13,7 +13,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // rooms: name -> { players: Map, video: {id,time,playing,ts} }
 const rooms = new Map();
 function getRoom(name) {
-  if (!rooms.has(name)) rooms.set(name, { players: new Map(), chat: [], seats: new Map(), tables: {}, pool: newPool(), pp: { A: null, B: null, score: [0, 0], chain: 0, rally: 0, running: false, hitAt: { A: 0, B: 0 } }, video: { id: 'dQw4w9WgXcQ', time: 0, playing: false, ts: Date.now() } });
+  if (!rooms.has(name)) rooms.set(name, { players: new Map(), chat: [], seats: new Map(), tables: {}, claw: { by: null, state: null }, pool: newPool(), pp: { A: null, B: null, score: [0, 0], chain: 0, rally: 0, running: false, hitAt: { A: 0, B: 0 } }, video: { id: 'dQw4w9WgXcQ', time: 0, playing: false, ts: Date.now() } });
   return rooms.get(name);
 }
 const FACES = ['happy', 'normal', 'surprised', 'sad', 'angry', 'wink', 'laugh'];
@@ -157,6 +157,7 @@ io.on('connection', (socket) => {
           room.players.delete(oid);
           freeSeats(room, oid);
           ppLeave(roomName, room, oid);
+          if (room.claw.by === oid) room.claw.by = null;
           io.to(roomName).emit('player-leave', oid);
           io.sockets.sockets.get(oid)?.disconnect(true);
         }
@@ -179,7 +180,7 @@ io.on('connection', (socket) => {
       x: (Math.random() - 0.5) * 6, z: 6, ry: 0,
     };
     room.players.set(socket.id, p);
-    socket.emit('init', { id: socket.id, players: [...room.players.values()], video: currentVideo(room.video), tables: room.tables, chat: room.chat, pool: { balls: poolPublic(room.pool), moving: room.pool.moving }, pp: ppPublic(room) });
+    socket.emit('init', { id: socket.id, players: [...room.players.values()], video: currentVideo(room.video), tables: room.tables, chat: room.chat, pool: { balls: poolPublic(room.pool), moving: room.pool.moving }, pp: ppPublic(room), clawState: room.claw.state });
     socket.to(roomName).emit('player-join', p);
     io.to(roomName).emit('count', room.players.size);
   });
@@ -258,6 +259,27 @@ io.on('connection', (socket) => {
     io.to(roomName).emit('dance', { id: socket.id, on: p.dance });
   });
 
+  socket.on('claw-join', () => {
+    if (!room) return;
+    const c = room.claw;
+    if (c.by && c.by !== socket.id && room.players.has(c.by)) return socket.emit('claw-busy');
+    c.by = socket.id;
+  });
+  socket.on('claw-leave', () => { if (room && room.claw.by === socket.id) room.claw.by = null; });
+  socket.on('claw-state', (s) => {
+    if (!room || room.claw.by !== socket.id || !s) return;
+    const n = (v, a, b) => Math.min(b, Math.max(a, +v || 0));
+    const st = { x: n(s.x, -0.6, 0.6), y: n(s.y, 1, 2.5), z: n(s.z, -0.6, 0.6), open: n(s.open, 0, 1), hold: Number.isInteger(s.hold) && s.hold >= 0 && s.hold < 14 ? s.hold : -1 };
+    room.claw.state = st;
+    socket.to(roomName).emit('claw-state', st);
+  });
+  socket.on('claw-win', ({ toy }) => {
+    if (!room || room.claw.by !== socket.id || !Number.isInteger(toy) || toy < 0 || toy > 13) return;
+    const p = room.players.get(socket.id);
+    io.to(roomName).emit('claw-won', { toy });
+    io.to(roomName).emit('pool-event', { text: `🎉 ${p ? p.name : 'Ai đó'} gắp được một chú thú bông 🧸!` });
+  });
+
   socket.on('attack', ({ target, type }) => {
     if (!room || !['punch', 'kick'].includes(type) || target === socket.id) return;
     const a = room.players.get(socket.id), v = room.players.get(target);
@@ -322,6 +344,7 @@ io.on('connection', (socket) => {
     if (!room) return;
     freeSeats(room, socket.id);
     ppLeave(roomName, room, socket.id);
+    if (room.claw.by === socket.id) room.claw.by = null;
     room.players.delete(socket.id);
     io.to(roomName).emit('player-leave', socket.id);
     io.to(roomName).emit('count', room.players.size);
