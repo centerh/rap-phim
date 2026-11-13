@@ -60,3 +60,5 @@ body.fs #scene { pointer-events: none; }
 #actionMenu { position: fixed; z-index: 45; background: rgba(20,14,30,.92); border: 1px solid #c9a227; border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 150px; }
 #actionName { text-align: center; font-weight: bold; color: #f1d27a; }
 #actionMenu button { padding: 8px; }
+
+#screenPanel { left: 10px; transform: none; width: min(560px, 62vw); }

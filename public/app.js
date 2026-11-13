@@ -221,24 +221,112 @@ function resize() {
 }
 addEventListener('resize', resize); resize();
 
-scene.add(new THREE.HemisphereLight(0xaab0ff, 0x221122, 1.1));
-const dl = new THREE.DirectionalLight(0xffffff, 0.9); dl.position.set(5, 12, 8); scene.add(dl);
+scene.add(new THREE.HemisphereLight(0x8c9cff, 0x1a0f1a, 0.8));
+const dl = new THREE.DirectionalLight(0xffffff, 0.55); dl.position.set(5, 12, 8); scene.add(dl);
 
 const clickables = [], seatsInfo = new Map(), tableGroups = new Map();
+const trophies = [], beams = [];
 const BOUND = { x: 14, zMin: -11, zMax: 14 };
+
+function bannerTexture(w, h, draw) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return t;
+}
+function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function titleTexture() {
+  return bannerTexture(1024, 480, (ctx, w, h) => {
+    ctx.textAlign = 'center';
+    ctx.font = 'italic 900 175px Impact, "Arial Black", sans-serif';
+    let g = ctx.createLinearGradient(0, 20, 0, 190);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(0.5, '#c7d2e0'); g.addColorStop(1, '#7f8da3');
+    ctx.lineJoin = 'round'; ctx.lineWidth = 14; ctx.strokeStyle = '#0b1230';
+    ctx.strokeText('WORLDS', 512, 175); ctx.fillStyle = g; ctx.fillText('WORLDS', 512, 175);
+    rr(ctx, 230, 195, 564, 50, 14); ctx.fillStyle = '#0b1230'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = '#b9c4d6'; ctx.stroke();
+    ctx.font = '700 32px "Arial Black", sans-serif'; ctx.fillStyle = '#e8eef7'; ctx.fillText('WORLD CHAMPIONSHIP', 512, 232);
+    ctx.font = 'italic 900 135px Impact, "Arial Black", sans-serif';
+    g = ctx.createLinearGradient(0, 250, 0, 370);
+    g.addColorStop(0, '#fff2a8'); g.addColorStop(0.5, '#f5b82e'); g.addColorStop(1, '#a8650a');
+    ctx.lineWidth = 12; ctx.strokeStyle = '#3a1d02';
+    ctx.strokeText('GRAND FINAL', 512, 365); ctx.fillStyle = g; ctx.fillText('GRAND FINAL', 512, 365);
+    // BLG VS GENG
+    rr(ctx, 170, 392, 270, 62, 12); ctx.fillStyle = '#1647c9'; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = '#cfd9ee'; ctx.stroke();
+    rr(ctx, 584, 392, 270, 62, 12); ctx.fillStyle = '#c4161f'; ctx.fill(); ctx.stroke();
+    ctx.font = '900 46px "Arial Black", sans-serif'; ctx.fillStyle = '#fff';
+    ctx.fillText('BLG', 305, 438); ctx.fillText('GENG', 719, 438);
+    ctx.fillStyle = '#f5d067'; ctx.fillText('VS', 512, 438);
+  });
+}
+function flagTexture(blue) {
+  return bannerTexture(512, 768, (ctx, w, h) => {
+    const g = ctx.createLinearGradient(0, 0, w, h);
+    if (blue) { g.addColorStop(0, '#0a2a8a'); g.addColorStop(0.5, '#1f5fff'); g.addColorStop(1, '#07123a'); }
+    else { g.addColorStop(0, '#5a0710'); g.addColorStop(0.5, '#e0262f'); g.addColorStop(1, '#2a0409'); }
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 14; i++) {
+      ctx.strokeStyle = blue ? `rgba(130,180,255,${0.08 + (i % 4) * 0.05})` : `rgba(255,150,140,${0.08 + (i % 4) * 0.05})`;
+      ctx.lineWidth = 6 + (i % 5) * 7;
+      ctx.beginPath(); ctx.moveTo(-20, i * 60); ctx.bezierCurveTo(w * 0.3, i * 60 - 140, w * 0.6, i * 60 + 160, w + 20, i * 60 - 60); ctx.stroke();
+    }
+    ctx.textAlign = 'center';
+    if (blue) {
+      const gg = ctx.createLinearGradient(0, 260, 0, 440);
+      gg.addColorStop(0, '#fff1a0'); gg.addColorStop(1, '#d99a14');
+      ctx.font = 'italic 900 210px Impact, "Arial Black", sans-serif';
+      ctx.lineWidth = 12; ctx.strokeStyle = '#2a1a02'; ctx.lineJoin = 'round';
+      ctx.strokeText('BLG', 256, 400); ctx.fillStyle = gg; ctx.fillText('BLG', 256, 400);
+      ctx.font = '700 44px "Arial Black", sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText('BILIBILI GAMING', 256, 470);
+    } else {
+      ctx.font = 'italic 900 170px Impact, "Arial Black", sans-serif';
+      ctx.lineWidth = 12; ctx.strokeStyle = '#2a0409'; ctx.lineJoin = 'round';
+      ctx.strokeText('GENG', 256, 400); ctx.fillStyle = '#fff'; ctx.fillText('GENG', 256, 400);
+    }
+  });
+}
+function makeTrophy() {
+  const g = new THREE.Group();
+  const silver = new THREE.MeshPhongMaterial({ color: 0xd5dde8, specular: 0xffffff, shininess: 90, side: THREE.DoubleSide });
+  const goldM = new THREE.MeshPhongMaterial({ color: 0xe0b030, specular: 0xffffff, shininess: 80 });
+  const pts = [[0.01, 0], [0.7, 0], [0.7, 0.14], [0.4, 0.28], [0.16, 0.6], [0.16, 1.0], [0.45, 1.3], [0.9, 2.1], [0.82, 2.25], [0.55, 1.75], [0.01, 1.55]]
+    .map(([x, y]) => new THREE.Vector2(x, y));
+  g.add(new THREE.Mesh(new THREE.LatheGeometry(pts, 32), silver));
+  for (const s of [-1, 1]) { // cánh
+    for (let i = 0; i < 3; i++) {
+      const w = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.1 - i * 0.25, 0.08), silver);
+      w.position.set(s * (0.75 + i * 0.22), 2.0 - i * 0.12, 0); w.rotation.z = -s * (0.35 + i * 0.15);
+      g.add(w);
+    }
+  }
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.2), new THREE.MeshBasicMaterial({ color: 0x3d7bff }));
+  gem.position.set(0, 1.5, 0.45); gem.scale.y = 1.4; g.add(gem);
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.1, 0.45, 24), goldM); base.position.y = -0.22; g.add(base);
+  g.scale.setScalar(1.35);
+  return g;
+}
+
 function buildRoom() {
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(32, 32), new THREE.MeshLambertMaterial({ color: 0x2a1a14 }));
-  floor.rotation.x = -Math.PI / 2; floor.position.z = 2; scene.add(floor);
-  const wallMat = new THREE.MeshLambertMaterial({ color: 0x2a2038 });
-  const back = new THREE.Mesh(new THREE.PlaneGeometry(32, 14), wallMat); back.position.set(0, 7, -14); scene.add(back);
-  const left = new THREE.Mesh(new THREE.PlaneGeometry(32, 14), wallMat); left.rotation.y = Math.PI / 2; left.position.set(-16, 7, 2); scene.add(left);
-  const right = left.clone(); right.rotation.y = -Math.PI / 2; right.position.x = 16; scene.add(right);
-  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(32, 32), new THREE.MeshLambertMaterial({ color: 0x15101c }));
-  ceil.rotation.x = Math.PI / 2; ceil.position.set(0, 14, 2); scene.add(ceil);
+  const H = 18;
+  const L = (c) => new THREE.MeshLambertMaterial({ color: c });
+  // sàn: nửa xanh (BLG) – nửa đỏ (GENG), thảm giữa
+  const fl = new THREE.Mesh(new THREE.PlaneGeometry(16, 32), L(0x0a1230));
+  fl.rotation.x = -Math.PI / 2; fl.position.set(-8, 0, 2); scene.add(fl);
+  const fr = new THREE.Mesh(new THREE.PlaneGeometry(16, 32), L(0x2a0a12));
+  fr.rotation.x = -Math.PI / 2; fr.position.set(8, 0, 2); scene.add(fr);
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(32, H), L(0x090b15)); back.position.set(0, H / 2, -14); scene.add(back);
+  const left = new THREE.Mesh(new THREE.PlaneGeometry(32, H), L(0x08163f)); left.rotation.y = Math.PI / 2; left.position.set(-16, H / 2, 2); scene.add(left);
+  const right = new THREE.Mesh(new THREE.PlaneGeometry(32, H), L(0x40091a)); right.rotation.y = -Math.PI / 2; right.position.set(16, H / 2, 2); scene.add(right);
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(32, 32), L(0x05060c)); ceil.rotation.x = Math.PI / 2; ceil.position.set(0, H, 2); scene.add(ceil);
 
   // màn hình chiếu: "lỗ" trong suốt ở WebGL để lộ iframe YouTube (CSS3D) phía sau
   const frame = new THREE.Mesh(new THREE.PlaneGeometry(16.8, 9.8), new THREE.MeshBasicMaterial({ color: 0x050508 }));
   frame.position.set(0, 7, -13.95); scene.add(frame);
+  const gl = new THREE.MeshBasicMaterial({ color: 0xf0c84b });
+  for (const [w, h, x, y] of [[17.2, 0.15, 0, 11.95], [17.2, 0.15, 0, 2.05], [0.15, 10, -8.5, 7], [0.15, 10, 8.5, 7]]) {
+    const b = new THREE.Mesh(new THREE.PlaneGeometry(w, h), gl); b.position.set(x, y, -13.93); scene.add(b);
+  }
   const hole = new THREE.Mesh(new THREE.PlaneGeometry(16, 9),
     new THREE.MeshBasicMaterial({ color: 0x000000, opacity: 0, transparent: false, blending: THREE.NoBlending, fog: false }));
   hole.position.set(0, 7, -13.9); scene.add(hole);
@@ -247,20 +335,65 @@ function buildRoom() {
   cssObj.position.set(0, 7, -13.9);
   cssObj.scale.setScalar(16 / 1280);
   scene.add(cssObj);
-  const glow = new THREE.PointLight(0x88aaff, 40, 30); glow.position.set(0, 6, -10); scene.add(glow);
-  const sign = textSprite('🎬 RẠP PHIM ONLINE', { size: 60, color: '#fff' });
-  sign.position.set(0, 12.7, -13.5); sign.scale.multiplyScalar(1.6); scene.add(sign);
+
+  // biển WORLDS GRAND FINAL phía trên màn hình
+  const title = new THREE.Mesh(new THREE.PlaneGeometry(8.6, 8.6 * 480 / 1024),
+    new THREE.MeshBasicMaterial({ map: titleTexture(), transparent: true, fog: false }));
+  title.position.set(0, 14.6, -13.85); scene.add(title);
+
+  // cờ BLG (trái) / GENG (phải) trên tường hai bên
+  for (const s of [-1, 1]) {
+    for (const z of [-5.5, 6.5]) {
+      const geo = new THREE.PlaneGeometry(7, 10.5, 10, 14);
+      const pos = geo.attributes.position;
+      for (let i = 0; i < pos.count; i++) pos.setZ(i, Math.sin(pos.getX(i) * 1.1 + pos.getY(i) * 0.6) * 0.25);
+      geo.computeVertexNormals();
+      const flag = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: flagTexture(s < 0), side: THREE.DoubleSide }));
+      flag.position.set(s * 15.6, 9, z); flag.rotation.y = s < 0 ? Math.PI / 2 : -Math.PI / 2; scene.add(flag);
+    }
+  }
+
+  // đèn màu + ánh sáng
+  const mkL = (c, i, d, x, y, z) => { const l = new THREE.PointLight(c, i, d); l.position.set(x, y, z); scene.add(l); };
+  mkL(0x3d6bff, 260, 45, -9, 11, 0);
+  mkL(0xff3b45, 260, 45, 9, 11, 0);
+  mkL(0xaabbff, 60, 30, 0, 8, -9);
+
+  // giàn đèn + chùm sáng quét
+  const trussM = L(0x151821);
+  for (const x of [-12, -6, 6, 12]) {
+    const t = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 32), trussM); t.position.set(x, H - 0.6, 2); scene.add(t);
+    for (let z = -12; z <= 14; z += 3.2) {
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshBasicMaterial({ color: x < 0 ? 0x7aa2ff : 0xff7a80 }));
+      lamp.position.set(x, H - 0.9, z); scene.add(lamp);
+    }
+  }
+  [[-12, 0x3d7bff], [-6, 0x6fa0ff], [6, 0xff6068], [12, 0xff3b45]].forEach(([x, c], i) => {
+    for (let z = -9; z <= 11; z += 6.7) {
+      const geo = new THREE.ConeGeometry(2.4, H - 1, 24, 1, true);
+      geo.rotateX(Math.PI); geo.translate(0, -(H - 1) / 2, 0);
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+      const pv = new THREE.Group(); pv.position.set(x, H - 0.8, z); pv.add(m); scene.add(pv);
+      beams.push({ g: pv, base: x < 0 ? 0.22 : -0.22, ph: i * 1.3 + z });
+    }
+  });
+
+  // cúp ở hai bên sân khấu
+  for (const s of [-1, 1]) {
+    const tr = makeTrophy(); tr.position.set(s * 10.6, 0.5, -12.3); scene.add(tr); trophies.push(tr);
+    mkL(0xffffff, 40, 14, s * 10.6, 6, -9.5);
+  }
 
   // ---- Sofa cao cấp, mỗi cặp 2 sofa có bàn ở giữa ----
   const gold = new THREE.MeshLambertMaterial({ color: 0xc9a227 });
-  const woodDark = new THREE.MeshLambertMaterial({ color: 0x3b2314 });
-  const lampMat = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
+  const darkTop = new THREE.MeshLambertMaterial({ color: 0x14161f });
+  const lampMat = new THREE.MeshBasicMaterial({ color: 0xffe9b8 });
   const add = (parent, geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); parent.add(m); return m; };
 
   function makeSofa(colorHex) {
     const grp = new THREE.Group();
     const vel = new THREE.MeshLambertMaterial({ color: colorHex });
-    const velLight = new THREE.MeshLambertMaterial({ color: new THREE.Color(colorHex).offsetHSL(0, 0, 0.06) });
+    const velLight = new THREE.MeshLambertMaterial({ color: new THREE.Color(colorHex).offsetHSL(0, 0, 0.08) });
     add(grp, new THREE.BoxGeometry(2.3, 0.4, 1.2), vel, 0, 0.35, 0);
     add(grp, new THREE.BoxGeometry(1.8, 0.28, 0.95), velLight, 0, 0.67, 0.08);
     add(grp, new THREE.BoxGeometry(2.3, 1.0, 0.3), vel, 0, 1.0, 0.5);
@@ -269,7 +402,6 @@ function buildRoom() {
       add(grp, new THREE.CylinderGeometry(0.04, 0.04, 0.2, 8), gold, s * 1.0, 0.1, -0.5);
       add(grp, new THREE.CylinderGeometry(0.04, 0.04, 0.2, 8), gold, s * 1.0, 0.1, 0.5);
     }
-    // gối tựa
     for (const s of [-0.55, 0.55]) {
       const p = add(grp, new THREE.BoxGeometry(0.5, 0.45, 0.14), velLight, s, 1.0, 0.3);
       p.rotation.x = -0.25;
@@ -278,7 +410,7 @@ function buildRoom() {
   }
   function makeTable() {
     const grp = new THREE.Group();
-    add(grp, new THREE.CylinderGeometry(0.55, 0.55, 0.06, 32), woodDark, 0, 0.78, 0);
+    add(grp, new THREE.CylinderGeometry(0.55, 0.55, 0.06, 32), darkTop, 0, 0.78, 0);
     add(grp, new THREE.TorusGeometry(0.55, 0.03, 8, 32), gold, 0, 0.78, 0).rotation.x = Math.PI / 2;
     add(grp, new THREE.CylinderGeometry(0.07, 0.07, 0.75, 12), gold, 0, 0.4, 0);
     add(grp, new THREE.CylinderGeometry(0.32, 0.38, 0.05, 24), gold, 0, 0.03, 0);
@@ -290,11 +422,11 @@ function buildRoom() {
     }
     return grp;
   }
-  const rowsZ = [-6, -1.5, 3], setsX = [-6.5, 6.5], colors = [0x7a1530, 0x1d3557, 0x2f4a2f];
+  const rowsZ = [-7.5, -4, -0.5, 3, 6.5, 10], setsX = [-6.5, 6.5], sideColors = [0x1a4fd6, 0xd0202a];
   rowsZ.forEach((z, r) => {
     setsX.forEach((cx, si) => {
-      const a = makeSofa(colors[r]); a.position.set(cx - 2.0, 0, z);
-      const b = makeSofa(colors[r]); b.position.set(cx + 2.0, 0, z);
+      const a = makeSofa(sideColors[si]); a.position.set(cx - 2.0, 0, z);
+      const b = makeSofa(sideColors[si]); b.position.set(cx + 2.0, 0, z);
       const t = makeTable(); t.position.set(cx, 0, z - 0.1);
       const tid = `t${r}${si}`;
       a.userData.seatId = `s${r}${si}a`; b.userData.seatId = `s${r}${si}b`; t.userData.tableId = tid;
@@ -303,36 +435,25 @@ function buildRoom() {
       tableGroups.set(tid, t);
       clickables.push(a, b, t);
       scene.add(a, b, t);
-      const pl = new THREE.PointLight(0xffcf8a, 4, 6); pl.position.set(cx, 1.4, z); scene.add(pl);
     });
   });
 
-  // thảm lối đi + đèn dẫn đường
-  const carpet = new THREE.Mesh(new THREE.PlaneGeometry(6, 26), new THREE.MeshLambertMaterial({ color: 0x5a0f22 }));
+  // thảm lối đi giữa + dải đèn LED
+  const carpet = new THREE.Mesh(new THREE.PlaneGeometry(6, 28), L(0x0d1020));
   carpet.rotation.x = -Math.PI / 2; carpet.position.set(0, 0.01, 1); scene.add(carpet);
-  for (const x of [-2.7, 2.7]) {
-    const trim = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 26), new THREE.MeshBasicMaterial({ color: 0xc9a227 }));
+  for (const [x, c] of [[-2.9, 0x4d86ff], [-2.6, 0xf0c84b], [2.6, 0xf0c84b], [2.9, 0xff4d55]]) {
+    const trim = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 28), new THREE.MeshBasicMaterial({ color: c }));
     trim.rotation.x = -Math.PI / 2; trim.position.set(x, 0.02, 1); scene.add(trim);
   }
-  // sân khấu + rèm nhung hai bên màn hình
-  const stage = new THREE.Mesh(new THREE.BoxGeometry(22, 0.5, 2.5), woodDark); stage.position.set(0, 0.25, -12.7); scene.add(stage);
-  const curtainMat = new THREE.MeshLambertMaterial({ color: 0x8c1020 });
-  for (const s of [-1, 1]) {
-    for (let i = 0; i < 4; i++) {
-      const c = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 12, 12), curtainMat);
-      c.position.set(s * (9.6 + i * 0.6), 6.5, -13.5); scene.add(c);
-    }
-  }
-  // đèn tường + ốp gỗ hai bên
-  for (let z = -10; z <= 12; z += 4.4) {
+  // sân khấu
+  const stage = new THREE.Mesh(new THREE.BoxGeometry(24, 0.5, 2.5), L(0x12151f)); stage.position.set(0, 0.25, -12.7); scene.add(stage);
+  const edge = new THREE.Mesh(new THREE.BoxGeometry(24, 0.06, 0.06), new THREE.MeshBasicMaterial({ color: 0xf0c84b })); edge.position.set(0, 0.5, -11.45); scene.add(edge);
+  // dải LED dọc tường
+  for (let z = -11; z <= 13; z += 4) {
     for (const s of [-1, 1]) {
-      const panel = new THREE.Mesh(new THREE.BoxGeometry(0.2, 8, 2.4), woodDark); panel.position.set(s * 15.9, 4, z); scene.add(panel);
-      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), lampMat); lamp.position.set(s * 15.5, 4.5, z); scene.add(lamp);
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 12, 0.18), new THREE.MeshBasicMaterial({ color: s < 0 ? 0x5a8fff : 0xff5a62 }));
+      strip.position.set(s * 15.9, 8, z); scene.add(strip);
     }
-  }
-  // đèn downlight trần
-  for (let x = -10; x <= 10; x += 5) for (let z = -8; z <= 12; z += 5) {
-    const d = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 16), lampMat); d.position.set(x, 13.95, z); scene.add(d);
   }
 }
 buildRoom();
@@ -863,6 +984,9 @@ function loop(now) {
     g.userData.animate(p.moving, dt);
     g.position.y = g.userData.bob || 0;
   }
+  const tsec = now / 1000;
+  for (const tr of trophies) tr.rotation.y += dt * 0.7;
+  for (const b of beams) b.g.rotation.z = b.base + Math.sin(tsec * 0.6 + b.ph) * 0.12;
   for (let i = fx.length - 1; i >= 0; i--) {
     const f = fx[i]; f.t += dt;
     f.sp.position.y += dt * 1.6;
