@@ -1,6 +1,6 @@
 /* Máy game console: Tetris, Cờ cá ngựa, Bắn tank, Đua xe, Bomberman (canvas 2D, chơi 1 người) */
 const GAMES = [
-  { id: 'tetris', icon: '🧱', name: 'Tetris', help: '← → di chuyển · ↑ / X xoay · Z xoay ngược · ↓ rơi nhanh · Space thả xuống · Enter: chơi lại' },
+  { id: 'tetris', icon: '🧱', name: 'Tetris', help: '← → hoặc A D: di chuyển · ↑ / W / X: xoay · Z: xoay ngược · ↓ / S: rơi nhanh · Space: thả xuống · Enter: chơi lại' },
   { id: 'ludo', icon: '🐴', name: 'Cờ cá ngựa', help: 'Space/Enter: tung xúc xắc · click vào quân hoặc phím 1-4 để đi · cần ra 6 để xuất quân · bạn là quân đỏ (trên)' },
   { id: 'tank', icon: '🛡️', name: 'Bắn tank', help: 'WASD / mũi tên: lái · Space: bắn · phá gạch, diệt hết xe địch · Enter: chơi lại' },
   { id: 'racing', icon: '🏎️', name: 'Đua xe', help: '← → đánh lái · ↑ tăng tốc · ↓ phanh · tránh xe phía trước · Enter: chơi lại' },
@@ -640,7 +640,7 @@ function build() {
     current && current.click && current.click((e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height);
   });
   window.addEventListener('keydown', onKeyDown, true);
-  window.addEventListener('keyup', (e) => { if (!Arcade.isOpen) return; e.stopImmediatePropagation(); down.delete(e.code); }, true);
+  window.addEventListener('keyup', (e) => { if (!Arcade.isOpen) return; e.stopImmediatePropagation(); down.delete(e.code); down.delete(ALIAS[e.code]); }, true);
   window.addEventListener('blur', () => down.clear());
 }
 function renderMenu() {
@@ -662,6 +662,7 @@ function startGame(id) {
   root.querySelector('#arcHelp').textContent = g.help;
   current = FACTORY[id](api);
 }
+const ALIAS = { KeyW: 'ArrowUp', KeyA: 'ArrowLeft', KeyS: 'ArrowDown', KeyD: 'ArrowRight' };
 function onKeyDown(e) {
   if (!Arcade.isOpen) return;
   e.stopImmediatePropagation();
@@ -669,8 +670,9 @@ function onKeyDown(e) {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(c)) e.preventDefault();
   if (c === 'Escape') { if (current) backToMenu(); else Arcade.close(); return; }
   if (current && overScore !== null && c === 'Enter') { startGame(currentId); return; }
-  down.add(c);
-  if (current && overScore === null) current.keyDown && current.keyDown(c, e.repeat);
+  const c2 = ALIAS[c] || c; // WASD hoạt động như phím mũi tên ở mọi trò
+  down.add(c); down.add(c2);
+  if (current && overScore === null) current.keyDown && current.keyDown(c2, e.repeat);
 }
 function loop(t) {
   raf = requestAnimationFrame(loop);
