@@ -49,6 +49,8 @@
     <input id="ytUrl" placeholder="Dán link YouTube rồi bấm Phát...">
     <button id="ytGo">Phát</button>
     <button id="playBtn" title="Phát / Tạm dừng">⏯</button>
+    <button id="micBtn" title="Giữ để nói (phím B) — tối đa 10 giây">🎤</button>
+    <button id="voiceMute" title="Bật/tắt nghe voice của mọi người">🔊</button>
     <button id="histBtn" title="Lịch sử chat">📜</button>
     <button id="viewBtn" title="Đổi góc nhìn (phím V)">👤 Góc 3</button>
     <button id="sizeBtn" title="Toàn màn hình (Esc để thoát)">⛶</button>
@@ -72,12 +74,13 @@
     </div>
   </div>
 </div>
+<div id="recBar" class="hidden"></div>
 <div id="actionMenu" class="hidden">
   <div id="actionName"></div>
   <button id="actPunch">👊 Đấm</button>
   <button id="actKick">🦶 Đá</button>
 </div>
-<div id="help" class="hidden">WASD: đi · Kéo chuột: xoay · V: góc nhìn · Click sofa: ngồi · Click bàn: gọi món · Click người: đấm/đá (hoặc F đấm, G đá) · Enter: chat</div>
+<div id="help" class="hidden">WASD: đi · Kéo chuột: xoay · V: góc nhìn · Click sofa: ngồi · Click bàn: gọi món · Click người: đấm/đá (hoặc F đấm, G đá) · Enter: chat · Giữ B: nói (10s)</div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script src="https://www.youtube.com/iframe_api"></script>

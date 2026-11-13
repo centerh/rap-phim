@@ -910,6 +910,84 @@ canvas.addEventListener('pointermove', (e) => {
   canvas.style.cursor = pick(e) ? 'pointer' : 'default';
 });
 
+/* ---------------- Voice chat (tin nhắn thoại tối đa 10s) ---------------- */
+const MAX_VOICE = 10;
+let micStream = null, recorder = null, recChunks = [], recStart = 0, recTimer = null, recTick = null, voiceMuted = false;
+const recBar = $('recBar');
+async function startRec() {
+  if (recorder || inLobby) return;
+  try {
+    if (!micStream) micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch (err) {
+    return addChat('', '🎤 Không truy cập được micro — hãy cho phép quyền micro trên trình duyệt', true);
+  }
+  if (recorder) return;
+  const mimes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+  const mime = mimes.find((m) => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+  recorder = new MediaRecorder(micStream, mime ? { mimeType: mime, audioBitsPerSecond: 32000 } : undefined);
+  recChunks = [];
+  recorder.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
+  const rec = recorder;
+  rec.onstop = async () => {
+    clearTimeout(recTimer); clearInterval(recTick);
+    recBar.classList.add('hidden'); $('micBtn').classList.remove('rec');
+    recorder = null;
+    const dur = (performance.now() - recStart) / 1000;
+    if (dur < 0.6) return addChat('', '🎤 Giữ nút lâu hơn một chút để ghi âm nhé', true);
+    const blob = new Blob(recChunks, { type: rec.mimeType || 'audio/webm' });
+    socket.emit('voice', { data: await blob.arrayBuffer(), mime: blob.type, dur: Math.min(MAX_VOICE, Math.round(dur)) });
+    addChat('Bạn', `🎤 đã gửi tin nhắn thoại (${Math.min(MAX_VOICE, Math.round(dur))}s)`, false, true);
+    if (myId) showBubble(myId, '🎤 ...');
+  };
+  rec.start();
+  recStart = performance.now();
+  $('micBtn').classList.add('rec');
+  recBar.classList.remove('hidden');
+  recTick = setInterval(() => {
+    const s = Math.min(MAX_VOICE, (performance.now() - recStart) / 1000);
+    recBar.textContent = `🔴 Đang ghi âm… ${s.toFixed(1)}s / ${MAX_VOICE}s — thả ra để gửi`;
+  }, 100);
+  recTimer = setTimeout(stopRec, MAX_VOICE * 1000);
+}
+function stopRec() { if (recorder && recorder.state === 'recording') recorder.stop(); }
+$('micBtn').addEventListener('pointerdown', (e) => { e.preventDefault(); startRec(); });
+for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) $('micBtn').addEventListener(ev, stopRec);
+addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() === 'b' && !e.repeat && !inLobby && !chatting && !menuOpen) startRec();
+});
+addEventListener('keyup', (e) => { if (e.key.toLowerCase() === 'b') stopRec(); });
+$('voiceMute').onclick = () => {
+  voiceMuted = !voiceMuted;
+  $('voiceMute').textContent = voiceMuted ? '🔇' : '🔊';
+};
+let voiceQueue = [], voicePlaying = false;
+socket.on('voice', (v) => {
+  addChat(v.name, `🎤 gửi tin nhắn thoại (${v.dur}s)`, false, true);
+  showBubble(v.id, '🎤 đang nói...');
+  if (voiceMuted) return;
+  voiceQueue.push(v);
+  playNextVoice();
+});
+function playNextVoice() {
+  if (voicePlaying || !voiceQueue.length) return;
+  const v = voiceQueue.shift();
+  voicePlaying = true;
+  const url = URL.createObjectURL(new Blob([v.data], { type: v.mime || 'audio/webm' }));
+  const au = new Audio(url);
+  const sp = players.get(v.id);
+  const dist = sp && me ? Math.hypot(sp.group.position.x - me.x, sp.group.position.z - me.z) : 0;
+  au.volume = Math.max(0.3, 1 - dist / 30);
+  let prevVol = null;
+  try { if (playerReady) { prevVol = player.getVolume(); player.setVolume(Math.min(prevVol, 20)); } } catch (e) {}
+  const done = () => {
+    URL.revokeObjectURL(url); voicePlaying = false;
+    try { if (prevVol !== null) player.setVolume(prevVol); } catch (e) {}
+    playNextVoice();
+  };
+  au.onended = done; au.onerror = done;
+  au.play().catch(done);
+}
+
 /* ---------------- Main loop ---------------- */
 let last = 0, sendT = 0, lastSent = '';
 function loop(now) {

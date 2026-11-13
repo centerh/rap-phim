@@ -83,6 +83,18 @@ io.on('connection', (socket) => {
     io.to(roomName).emit('chat', msg);
   });
 
+  socket.on('voice', ({ data, mime, dur }) => {
+    if (!room) return;
+    const p = room.players.get(socket.id);
+    if (!p || !data) return;
+    const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    const now = Date.now();
+    if (buf.length > 400000 || buf.length < 100 || (p.lastVoice && now - p.lastVoice < 800)) return;
+    if (!String(mime || '').startsWith('audio/')) return;
+    p.lastVoice = now;
+    socket.to(roomName).emit('voice', { id: socket.id, name: p.name, data: buf, mime: clean(mime, 40), dur: Math.min(10, Math.max(1, Math.round(+dur || 1))) });
+  });
+
   socket.on('attack', ({ target, type }) => {
     if (!room || !['punch', 'kick'].includes(type) || target === socket.id) return;
     const a = room.players.get(socket.id), v = room.players.get(target);

@@ -66,3 +66,10 @@ body.fs #scene { pointer-events: none; }
 #gender { display: flex; gap: 8px; }
 #gender button { flex: 1; padding: 10px; border: 2px solid transparent; font-size: 15px; }
 #gender button.on { border-color: #e50914; background: #4a2a3a; }
+
+#micBtn.rec { background: #e50914; animation: pulse 1s infinite; }
+@keyframes pulse { 50% { opacity: .55; } }
+#recBar { position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%); z-index: 35; background: rgba(229,9,20,.85);
+  padding: 8px 16px; border-radius: 20px; font-size: 14px; pointer-events: none; }
+
+#screenPanel { width: min(680px, 70vw); }
