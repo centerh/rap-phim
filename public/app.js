@@ -1029,9 +1029,24 @@ addEventListener('keydown', (e) => {
   if (inLobby) return;
   if (e.key === 'Enter') { e.preventDefault(); chatInput.focus(); return; }
   if (chatting) return;
-  keys[e.key.toLowerCase()] = true;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  keys[keyName(e)] = true;
 });
-addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+addEventListener('keyup', (e) => { keys[keyName(e)] = false; });
+// dùng e.code để không bị lệch khi gõ tiếng Việt (Unikey), Shift, CapsLock...
+function keyName(e) {
+  const c = e.code || '';
+  if (c.startsWith('Key')) return c.slice(3).toLowerCase();
+  if (c.startsWith('Arrow')) return c.toLowerCase();
+  if (c.startsWith('Shift')) return 'shift';
+  return String(e.key).toLowerCase();
+}
+// tránh kẹt phím (nhân vật tự chạy): xoá hết phím khi mất focus / chuyển tab / bấm chuột phải
+function clearKeys() { for (const k in keys) keys[k] = false; }
+addEventListener('blur', clearKeys);
+document.addEventListener('visibilitychange', clearKeys);
+addEventListener('contextmenu', clearKeys);
+canvas.addEventListener('pointerdown', () => { if (!chatting) window.focus(); });
 let dragging = false, lx = 0, ly = 0;
 canvas.addEventListener('pointerdown', (e) => { dragging = true; lx = e.clientX; ly = e.clientY; canvas.setPointerCapture(e.pointerId); });
 canvas.addEventListener('pointerup', () => { dragging = false; });
