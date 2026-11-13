@@ -13,7 +13,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // rooms: name -> { players: Map, video: {id,time,playing,ts} }
 const rooms = new Map();
 function getRoom(name) {
-  if (!rooms.has(name)) rooms.set(name, { players: new Map(), chat: [], seats: new Map(), tables: {}, claw: { by: null, state: null }, pool: newPool(), pp: { A: null, B: null, score: [0, 0], chain: 0, rally: 0, running: false, hitAt: { A: 0, B: 0 } }, video: { id: 'dQw4w9WgXcQ', time: 0, playing: false, ts: Date.now() } });
+  if (!rooms.has(name)) rooms.set(name, { players: new Map(), chat: [], seats: new Map(), tables: {}, claw: { by: null, state: null }, poolSeats: { A: null, B: null, turn: 'A' }, arc: {}, pool: newPool(), pp: { A: null, B: null, score: [0, 0], chain: 0, rally: 0, running: false, hitAt: { A: 0, B: 0 } }, video: { id: 'dQw4w9WgXcQ', time: 0, playing: false, ts: Date.now() } });
   return rooms.get(name);
 }
 const FACES = ['happy', 'normal', 'surprised', 'sad', 'angry', 'wink', 'laugh'];
@@ -67,23 +67,51 @@ function poolStep(pool, dt) {
   return { moving, ev };
 }
 const poolPublic = (pool) => pool.balls.map((b) => [+b.x.toFixed(3), +b.y.toFixed(3), b.out ? 1 : 0]);
-function poolShoot(rn, room, angle, power, by) {
-  const pool = room.pool;
+const poolActive = (room) => { const s = room.poolSeats; return !!(s.A && s.B && room.players.has(s.A) && room.players.has(s.B)); };
+function poolSeatsPublic(room) {
+  const s = room.poolSeats, nm = (id) => (id && room.players.get(id) ? room.players.get(id).name : null);
+  return { A: nm(s.A), B: nm(s.B), idA: s.A, idB: s.B, turn: s.turn, active: poolActive(room) };
+}
+const poolSeatsBroadcast = (rn, room) => io.to(rn).emit('pool-seats', poolSeatsPublic(room));
+function poolLeave(rn, room, id) {
+  const s = room.poolSeats; let ch = false;
+  for (const k of ['A', 'B']) if (s[k] === id) { s[k] = null; ch = true; }
+  if (ch) { s.turn = 'A'; poolSeatsBroadcast(rn, room); }
+}
+function poolShoot(rn, room, angle, power, by, id) {
+  const pool = room.pool, seats = room.poolSeats;
   if (pool.moving || pool.balls[0].out) return;
+  if (poolActive(room) && seats[seats.turn] !== id) { io.to(id).emit('pool-event', { text: 'Chưa tới lượt bạn nhé 🎱' }); return; }
   const sp = 0.8 + Math.min(1, Math.max(0, power)) * 5.5;
   pool.balls[0].vx = Math.cos(angle) * sp; pool.balls[0].vy = Math.sin(angle) * sp;
-  pool.moving = true; pool.by = by;
+  pool.moving = true; pool.by = by; pool.shot = [];
   pool.timer = setInterval(() => {
     let res;
     for (let s = 0; s < 4; s++) res = poolStep(pool, 1 / 120);
     for (const i of res.ev) {
+      pool.shot.push(i);
       if (i === 0) io.to(rn).emit('pool-event', { text: `${by} bị rơi bi trắng! ⚪` });
       else io.to(rn).emit('pool-event', { text: `${by} bỏ bi số ${i} vào lỗ 🎱` });
     }
     if (!res.moving) {
       clearInterval(pool.timer); pool.timer = null; pool.moving = false;
-      if (pool.balls[0].out) { Object.assign(pool.balls[0], { x: -PL / 4, y: 0, vx: 0, vy: 0, out: false }); }
-      if (pool.balls.slice(1).every((b) => b.out)) { io.to(rn).emit('pool-event', { text: `🎉 ${by} đã dọn sạch bàn! Xếp lại bi...` }); setTimeout(() => poolReset(rn, room), 2500); }
+      const scratch = pool.balls[0].out;
+      if (scratch) Object.assign(pool.balls[0], { x: -PL / 4, y: 0, vx: 0, vy: 0, out: false });
+      if (poolActive(room)) {
+        const side = seats.turn, mine = (i) => (side === 'A' ? i >= 1 && i <= 5 : i >= 6 && i <= 10);
+        const own = pool.shot.some((i) => i > 0 && mine(i));
+        const aDone = pool.balls.slice(1, 6).every((b) => b.out), bDone = pool.balls.slice(6, 11).every((b) => b.out);
+        const ps = poolSeatsPublic(room);
+        if (aDone || bDone) {
+          const w = aDone && !bDone ? 'A' : bDone && !aDone ? 'B' : side;
+          io.to(rn).emit('pool-event', { text: `🏆 ${ps[w]} thắng ván bi-a! Xếp lại bi...` });
+          setTimeout(() => { seats.turn = 'A'; poolReset(rn, room); poolSeatsBroadcast(rn, room); }, 3000);
+        } else {
+          if (scratch || !own) seats.turn = side === 'A' ? 'B' : 'A';
+          poolSeatsBroadcast(rn, room);
+          io.to(rn).emit('pool-event', { text: `Lượt của ${poolSeatsPublic(room)[seats.turn]} (bi ${seats.turn === 'A' ? '1-5' : '6-10'})` });
+        }
+      } else if (pool.balls.slice(1).every((b) => b.out)) { io.to(rn).emit('pool-event', { text: `🎉 ${by} đã dọn sạch bàn! Xếp lại bi...` }); setTimeout(() => poolReset(rn, room), 2500); }
     }
     io.to(rn).emit('pool', { balls: poolPublic(pool), moving: pool.moving });
   }, 33);
@@ -100,6 +128,33 @@ const ppHumans = (room) => ['A', 'B'].filter((s) => room.pp[s] && room.players.h
 function ppPublic(room) {
   const n = (s) => (room.pp[s] && room.players.get(room.pp[s]) ? room.players.get(room.pp[s]).name : null);
   return { A: n('A'), B: n('B'), ids: { A: room.pp.A, B: room.pp.B }, score: room.pp.score };
+}
+/* ---------- Máy game console nhiều người (chủ phòng chạy game, server chuyển tiếp) ---------- */
+const ARC_MAX = { ludo: 4, bomber: 4, tank: 4 };
+const arcLobby = (room, g) => room.arc[g] || (room.arc[g] = { players: [], host: null, started: false });
+const arcMembers = (room, g) => arcLobby(room, g).players.map((id, slot) => (id && room.players.has(id) ? { id, name: room.players.get(id).name, slot } : null)).filter(Boolean);
+function arcCounts(room) { const o = {}; for (const g of Object.keys(ARC_MAX)) o[g] = room.arc[g] ? arcMembers(room, g).length : 0; return o; }
+function arcBroadcast(rn, room, g) {
+  const l = arcLobby(room, g), pl = arcMembers(room, g);
+  for (const m of pl) io.to(m.id).emit('arc-lobby', { game: g, players: pl, host: l.host, started: l.started });
+  io.to(rn).emit('arc-counts', arcCounts(room));
+}
+function arcLeave(rn, room, id) {
+  for (const g of Object.keys(ARC_MAX)) {
+    const l = room.arc[g];
+    if (!l || !l.players.includes(id)) continue;
+    if (l.host === id) {
+      for (const m of l.players) if (m && m !== id) io.to(m).emit('arc-ended', { game: g, reason: 'Chủ phòng đã thoát' });
+      room.arc[g] = { players: [], host: null, started: false };
+    } else if (l.started) {
+      const slot = l.players.indexOf(id); l.players[slot] = null;
+      io.to(l.host).emit('arc-left', { game: g, slot });
+      if (!l.players.some((m, i) => m && m !== l.host)) { /* chỉ còn chủ phòng: giữ ván đến khi thoát */ }
+    } else {
+      l.players.splice(l.players.indexOf(id), 1); arcBroadcast(rn, room, g);
+    }
+  }
+  io.to(rn).emit('arc-counts', arcCounts(room));
 }
 function ppFlight(rn, room, from, dur, token) {
   const pp = room.pp;
@@ -156,7 +211,7 @@ io.on('connection', (socket) => {
         if (op.cid === cid && oid !== socket.id) {
           room.players.delete(oid);
           freeSeats(room, oid);
-          ppLeave(roomName, room, oid);
+          ppLeave(roomName, room, oid); poolLeave(roomName, room, oid); arcLeave(roomName, room, oid);
           if (room.claw.by === oid) room.claw.by = null;
           io.to(roomName).emit('player-leave', oid);
           io.sockets.sockets.get(oid)?.disconnect(true);
@@ -180,7 +235,7 @@ io.on('connection', (socket) => {
       x: (Math.random() - 0.5) * 6, z: 6, ry: 0,
     };
     room.players.set(socket.id, p);
-    socket.emit('init', { id: socket.id, players: [...room.players.values()], video: currentVideo(room.video), tables: room.tables, chat: room.chat, pool: { balls: poolPublic(room.pool), moving: room.pool.moving }, pp: ppPublic(room), clawState: room.claw.state });
+    socket.emit('init', { id: socket.id, players: [...room.players.values()], video: currentVideo(room.video), tables: room.tables, chat: room.chat, pool: { balls: poolPublic(room.pool), moving: room.pool.moving }, pp: ppPublic(room), clawState: room.claw.state, poolSeats: poolSeatsPublic(room), arcCounts: arcCounts(room) });
     socket.to(roomName).emit('player-join', p);
     io.to(roomName).emit('count', room.players.size);
   });
@@ -227,7 +282,7 @@ io.on('connection', (socket) => {
     if (!room) return;
     const p = room.players.get(socket.id);
     if (!p || !Number.isFinite(+angle) || !Number.isFinite(+power)) return;
-    poolShoot(roomName, room, +angle, +power, p.name);
+    poolShoot(roomName, room, +angle, +power, p.name, socket.id);
   });
   socket.on('pool-reset', () => { if (room) poolReset(roomName, room); });
 
@@ -243,6 +298,60 @@ io.on('connection', (socket) => {
     io.to(roomName).emit('pp', ppPublic(room));
     if (!pp.running) setTimeout(() => { if (ppHumans(room).length && !pp.running) ppServe(roomName, room, opp(slot)); }, 1200);
   });
+  socket.on('pool-sit', () => {
+    if (!room) return;
+    const s = room.poolSeats;
+    if (s.A === socket.id || s.B === socket.id) return;
+    if (!s.A || !room.players.has(s.A)) s.A = socket.id; else if (!s.B || !room.players.has(s.B)) s.B = socket.id; else return socket.emit('pool-event', { text: 'Bàn bi-a đã đủ 2 người chơi' });
+    if (poolActive(room)) {
+      s.turn = 'A'; poolReset(roomName, room);
+      const ps = poolSeatsPublic(room);
+      io.to(roomName).emit('pool-event', { text: `🎱 Ván 2 người: ${ps.A} (bi 1-5) vs ${ps.B} (bi 6-10). ${ps.A} đánh trước!` });
+    }
+    poolSeatsBroadcast(roomName, room);
+  });
+  socket.on('pool-stand', () => { if (room) poolLeave(roomName, room, socket.id); });
+
+  socket.on('arc-join', ({ game }) => {
+    if (!room || !ARC_MAX[game] || !room.players.has(socket.id)) return;
+    arcLeave(roomName, room, socket.id);
+    const l = arcLobby(room, game);
+    if (l.started) return socket.emit('arc-busy', { game });
+    if (l.players.length >= ARC_MAX[game]) return socket.emit('arc-full', { game });
+    l.players.push(socket.id); if (!l.host) l.host = socket.id;
+    arcBroadcast(roomName, room, game);
+  });
+  socket.on('arc-leave', () => { if (room) arcLeave(roomName, room, socket.id); });
+  socket.on('arc-start', ({ game }) => {
+    if (!room || !ARC_MAX[game]) return;
+    const l = arcLobby(room, game);
+    if (l.host !== socket.id || l.started || arcMembers(room, game).length < 2) return;
+    l.started = true;
+    const pl = arcMembers(room, game);
+    for (const m of pl) io.to(m.id).emit('arc-started', { game, players: pl, host: l.host });
+    io.to(roomName).emit('arc-counts', arcCounts(room));
+  });
+  socket.on('arc-restart', ({ game }) => {
+    if (!room || !ARC_MAX[game]) return;
+    const l = arcLobby(room, game);
+    if (l.host !== socket.id || !l.started) return;
+    const pl = arcMembers(room, game);
+    for (const m of pl) io.to(m.id).emit('arc-started', { game, players: pl, host: l.host });
+  });
+  socket.on('arc-input', ({ game, data }) => {
+    if (!room || !ARC_MAX[game]) return;
+    const l = room.arc[game];
+    if (!l || !l.started || l.host === socket.id) return;
+    const slot = l.players.indexOf(socket.id);
+    if (slot >= 0) io.to(l.host).emit('arc-input', { slot, data });
+  });
+  socket.on('arc-state', ({ game, data }) => {
+    if (!room || !ARC_MAX[game]) return;
+    const l = room.arc[game];
+    if (!l || l.host !== socket.id) return;
+    for (const m of l.players) if (m && m !== socket.id) io.to(m).emit('arc-state', { game, data });
+  });
+
   socket.on('pp-leave', () => { if (room) ppLeave(roomName, room, socket.id); });
   socket.on('pp-hit', () => {
     if (!room) return;
@@ -343,7 +452,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     if (!room) return;
     freeSeats(room, socket.id);
-    ppLeave(roomName, room, socket.id);
+    ppLeave(roomName, room, socket.id); poolLeave(roomName, room, socket.id); arcLeave(roomName, room, socket.id);
     if (room.claw.by === socket.id) room.claw.by = null;
     room.players.delete(socket.id);
     io.to(roomName).emit('player-leave', socket.id);

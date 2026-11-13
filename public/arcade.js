@@ -1,10 +1,10 @@
-/* Máy game console: Tetris, Cờ cá ngựa, Bắn tank, Đua xe, Bomberman (canvas 2D, chơi 1 người) */
+/* Máy game console: Tetris, Cờ cá ngựa, Bắn tank, Đua xe, Bomberman (canvas 2D; Cờ cá ngựa/Tank/Bomberman chơi online nhiều người) */
 const GAMES = [
   { id: 'tetris', icon: '🧱', name: 'Tetris', help: '← → hoặc A D: di chuyển · ↑ / W / X: xoay · Z: xoay ngược · ↓ / S: rơi nhanh · Space: thả xuống · Enter: chơi lại' },
-  { id: 'ludo', icon: '🐴', name: 'Cờ cá ngựa', help: 'Space/Enter: tung xúc xắc · click vào quân hoặc phím 1-4 để đi · cần ra 6 để xuất quân · bạn là quân đỏ (trên)' },
-  { id: 'tank', icon: '🛡️', name: 'Bắn tank', help: 'WASD / mũi tên: lái · Space: bắn · phá gạch, diệt hết xe địch · Enter: chơi lại' },
+  { id: 'ludo', icon: '🐴', name: 'Cờ cá ngựa', help: 'Space/Enter: tung xúc xắc · click vào quân hoặc phím 1-4 để đi · cần ra 6 để xuất quân · 1 người đấu 3 máy hoặc chơi Online với bạn bè' },
+  { id: 'tank', icon: '🛡️', name: 'Bắn tank', help: 'WASD / mũi tên: lái · Space: bắn · phá gạch, diệt hết xe địch · Online: co-op cùng bạn bè · Enter: chơi lại' },
   { id: 'racing', icon: '🏎️', name: 'Đua xe', help: '← → đánh lái · ↑ tăng tốc · ↓ phanh · tránh xe phía trước · Enter: chơi lại' },
-  { id: 'bomber', icon: '💣', name: 'Bomberman', help: 'WASD / mũi tên: đi · Space: đặt bom · nổ gạch nhặt vật phẩm, diệt hết kẻ địch · Enter: chơi lại' },
+  { id: 'bomber', icon: '💣', name: 'Bomberman', help: 'WASD / mũi tên: đi · Space: đặt bom · nổ gạch nhặt vật phẩm · 1 người: diệt hết kẻ địch · Online: đấu, sống sót cuối cùng thắng · Enter: chơi lại' },
 ];
 const W = 640, H = 480;
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -93,9 +93,14 @@ function tetris(api) {
   };
 }
 
-/* ========================= CỜ CÁ NGỰA (LUDO) ========================= */
-function ludo(api) {
+/* ========================= CỜ CÁ NGỰA (LUDO) — 1 người hoặc nhiều người ========================= */
+const CN = ['đỏ', 'xanh dương', 'vàng', 'xanh lá'];
+function ludo(api, o = {}) {
   const { ctx } = api;
+  const guest = o.mode === 'guest', mySlot = o.mySlot || 0;
+  const slots = o.slots || [{ name: 'Bạn', human: true }, { human: false }, { human: false }, { human: false }];
+  const isHuman = (k) => !!slots[k].human;
+  const label = (k) => (isHuman(k) ? `${slots[k].name} (${CN[k]})` : `Máy ${CN[k]}`);
   const CS = 40, OX = (W - 440) / 2, OY = 12;
   const ring = [];
   for (let x = 0; x <= 10; x++) ring.push([x, 0]);
@@ -105,9 +110,10 @@ function ludo(api) {
   const entry = [5, 15, 25, 35], start = entry.map((e) => (e + 2) % 40);
   const homeDir = [[0, 1], [-1, 0], [0, -1], [1, 0]];
   const baseC = [[8, 2], [8, 8], [2, 8], [2, 2]], slotOff = [[-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7]];
-  const COLORS = ['#e53935', '#1e88e5', '#fdd835', '#43a047'], NAMES = ['Bạn (đỏ)', 'Máy xanh dương', 'Máy vàng', 'Máy xanh lá'];
-  const pcs = [0, 1, 2, 3].map(() => [-1, -1, -1, -1]);
-  let turn = 0, phase = 'roll', dice = 0, sixes = 0, winner = -1, botT = 0.8, passT = 0, msg = 'Tới lượt bạn — bấm Space để tung xúc xắc', autoT = 0, rolling = 0;
+  const COLORS = ['#e53935', '#1e88e5', '#fdd835', '#43a047'];
+  let pcs = [0, 1, 2, 3].map(() => [-1, -1, -1, -1]);
+  let turn = 0, phase = 'roll', dice = 0, sixes = 0, winner = -1, botT = 0.8, passT = 0, msg = '', autoT = 0, rolling = 0;
+  msg = `Lượt của ${label(0)}`;
   const cellOf = (k, p, i) => {
     if (p < 0) return [baseC[k][0] + slotOff[i][0], baseC[k][1] + slotOff[i][1]];
     if (p <= 38) return ring[(start[k] + p) % 40];
@@ -117,35 +123,33 @@ function ludo(api) {
   const px = (c) => [OX + (c[0] + 0.5) * CS, OY + (c[1] + 0.5) * CS];
   const legal = (k, d) => {
     const out = [];
-    pcs[k].forEach((p, i) => {
-      if (p === -1) { if (d === 6) out.push(i); } else if (p + d <= 43) out.push(i);
-    });
+    pcs[k].forEach((p, i) => { if (p === -1) { if (d === 6) out.push(i); } else if (p + d <= 43) out.push(i); });
     return out;
   };
   function nextTurn() {
-    if (dice === 6 && sixes < 3) { sixes++; } else { turn = (turn + 1) % 4; sixes = 0; }
-    phase = 'roll'; dice = 0;
-    msg = turn === 0 ? 'Tới lượt bạn — bấm Space để tung xúc xắc' : `Lượt của ${NAMES[turn]}...`;
-    botT = 0.9;
+    if (dice === 6 && sixes < 3) sixes++; else { turn = (turn + 1) % 4; sixes = 0; }
+    phase = 'roll'; dice = 0; msg = `Lượt của ${label(turn)}`; botT = 0.9;
   }
   function doRoll() {
     dice = ri(1, 6); rolling = 0.4;
     const mv = legal(turn, dice);
-    if (!mv.length) { phase = 'pass'; passT = 1.0; msg = `${NAMES[turn]} tung ${dice}: không có nước đi`; return; }
-    phase = 'choose'; msg = `${NAMES[turn]} tung ${dice}` + (turn === 0 ? (mv.length > 1 ? ' — chọn quân để đi (click hoặc phím 1-4)' : '') : '');
-    if (turn === 0 && mv.length === 1) autoT = 0.6; else autoT = 0;
+    if (!mv.length) { phase = 'pass'; passT = 1.0; msg = `${label(turn)} tung ${dice}: không có nước đi`; return; }
+    phase = 'choose'; msg = `${label(turn)} tung ${dice}` + (isHuman(turn) && mv.length > 1 ? ' — chọn quân để đi' : '');
+    autoT = isHuman(turn) && mv.length === 1 ? 0.6 : 0;
   }
   function movePiece(k, i) {
-    const p = pcs[k][i];
-    const np = p === -1 ? 0 : p + dice;
+    const p = pcs[k][i], np = p === -1 ? 0 : p + dice;
     pcs[k][i] = np;
     if (np <= 38) {
       const idx = (start[k] + np) % 40;
-      for (let o = 0; o < 4; o++) if (o !== k) pcs[o].forEach((q, j) => {
-        if (q >= 0 && q <= 38 && (start[o] + q) % 40 === idx) { pcs[o][j] = -1; msg = `${NAMES[k]} đá quân của ${NAMES[o]}! 💥`; }
+      for (let q = 0; q < 4; q++) if (q !== k) pcs[q].forEach((v, j) => {
+        if (v >= 0 && v <= 38 && (start[q] + v) % 40 === idx) { pcs[q][j] = -1; msg = `${label(k)} đá quân của ${label(q)}! 💥`; }
       });
     }
-    if (pcs[k].every((q) => q === 43)) { winner = k; msg = k === 0 ? '🎉 Bạn thắng!' : `${NAMES[k]} thắng rồi!`; api.over(k === 0 ? 1 : 0); return; }
+    if (pcs[k].every((q) => q === 43)) {
+      winner = k; msg = `🎉 ${label(k)} thắng!`;
+      api.over(k === mySlot ? 1 : 0, k === mySlot ? '🎉 BẠN THẮNG!' : `${label(k)} thắng`); return;
+    }
     nextTurn();
   }
   function botChoose() {
@@ -155,47 +159,58 @@ function ludo(api) {
       const p = pcs[turn][i], np = p === -1 ? 0 : p + dice;
       let s = np;
       if (p === -1) s += 60;
-      if (np <= 38) { const idx = (start[turn] + np) % 40; for (let o = 0; o < 4; o++) if (o !== turn) pcs[o].forEach((q) => { if (q >= 0 && q <= 38 && (start[o] + q) % 40 === idx) s += 100; }); }
+      if (np <= 38) { const idx = (start[turn] + np) % 40; for (let q = 0; q < 4; q++) if (q !== turn) pcs[q].forEach((v) => { if (v >= 0 && v <= 38 && (start[q] + v) % 40 === idx) s += 100; }); }
       if (np >= 39) s += 30; if (np === 43) s += 40;
       if (s > bs) { bs = s; best = i; }
     }
     movePiece(turn, best);
   }
+  const rollAction = (slot) => { if (winner < 0 && turn === slot && isHuman(slot) && phase === 'roll') doRoll(); };
+  const moveAction = (slot, i) => { if (winner < 0 && turn === slot && phase === 'choose' && legal(slot, dice).includes(i)) movePiece(slot, i); };
+  function slotKey(slot, c) {
+    if (c === 'Space' || c === 'Enter') rollAction(slot);
+    else if (/^Digit[1-4]$/.test(c)) moveAction(slot, +c.slice(5) - 1);
+  }
+  function slotClick(slot, x, y) {
+    if (winner >= 0 || turn !== slot) return;
+    if (phase === 'roll') { rollAction(slot); return; }
+    if (phase !== 'choose') return;
+    for (const i of legal(slot, dice)) {
+      const [cx, cy] = px(cellOf(slot, pcs[slot][i], i));
+      if (Math.hypot(x - cx, y - cy) < 20) { moveAction(slot, i); return; }
+    }
+  }
   const pip = [[], [[0, 0]], [[-1, -1], [1, 1]], [[-1, -1], [0, 0], [1, 1]], [[-1, -1], [1, -1], [-1, 1], [1, 1]], [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]], [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]]];
   return {
     update(dt) {
-      if (winner >= 0) return;
       if (rolling > 0) rolling -= dt;
+      if (guest || winner >= 0) return;
       if (phase === 'pass') { passT -= dt; if (passT <= 0) nextTurn(); return; }
-      if (turn !== 0) {
+      if (!isHuman(turn)) {
         botT -= dt;
         if (botT <= 0) { if (phase === 'roll') { doRoll(); botT = 0.9; } else if (phase === 'choose') botChoose(); }
-      } else if (phase === 'choose' && autoT > 0) { autoT -= dt; if (autoT <= 0) movePiece(0, legal(0, dice)[0]); }
+      } else if (phase === 'choose' && autoT > 0) { autoT -= dt; if (autoT <= 0) movePiece(turn, legal(turn, dice)[0]); }
     },
-    keyDown(c) {
-      if (winner >= 0 || turn !== 0) return;
-      if ((c === 'Space' || c === 'Enter') && phase === 'roll') doRoll();
-      else if (phase === 'choose' && /^Digit[1-4]$/.test(c)) { const i = +c.slice(5) - 1; if (legal(0, dice).includes(i)) movePiece(0, i); }
-    },
-    click(x, y) {
-      if (winner >= 0 || turn !== 0) return;
-      if (phase === 'roll') { doRoll(); return; }
-      if (phase !== 'choose') return;
-      for (const i of legal(0, dice)) {
-        const [cx, cy] = px(cellOf(0, pcs[0][i], i));
-        if (Math.hypot(x - cx, y - cy) < 20) { movePiece(0, i); return; }
-      }
+    keyDown(c) { slotKey(mySlot, c); },
+    click(x, y) { slotClick(mySlot, x, y); },
+    slotKey, slotClick,
+    slotLeft(slot) { slots[slot].human = false; },
+    getState: () => ({ pcs, turn, phase, dice, msg, winner, sixes, hum: slots.map((s) => !!s.human) }),
+    setState(s) {
+      const nd = s.dice !== dice && s.dice > 0;
+      pcs = s.pcs; turn = s.turn; phase = s.phase; dice = s.dice; msg = s.msg; sixes = s.sixes;
+      s.hum.forEach((h, i) => { slots[i].human = h; });
+      if (nd) rolling = 0.4;
+      if (s.winner >= 0 && winner < 0) { winner = s.winner; api.over(winner === mySlot ? 1 : 0, winner === mySlot ? '🎉 BẠN THẮNG!' : `${label(winner)} thắng`); }
     },
     draw() {
       ctx.fillStyle = '#16213e'; ctx.fillRect(0, 0, W, H);
       ctx.fillStyle = '#f5ecd5'; ctx.fillRect(OX - 6, OY - 6, 452, 452);
-      // bãi xuất quân
       for (let k = 0; k < 4; k++) {
         const [cx, cy] = px(baseC[k]);
         ctx.fillStyle = COLORS[k] + '55'; ctx.beginPath(); ctx.roundRect(cx - 1.6 * CS, cy - 1.6 * CS, 3.2 * CS, 3.2 * CS, 14); ctx.fill();
-        ctx.strokeStyle = COLORS[k]; ctx.lineWidth = 3; ctx.stroke();
+        ctx.strokeStyle = COLORS[k]; ctx.lineWidth = k === mySlot ? 6 : 3; ctx.stroke();
       }
-      // đường đi
       ring.forEach(([x, y], i) => {
         const [cx, cy] = px([x, y]);
         let col = '#fff';
@@ -207,58 +222,63 @@ function ludo(api) {
         const e = ring[entry[k]], [cx, cy] = px([e[0] + homeDir[k][0] * s, e[1] + homeDir[k][1] * s]);
         ctx.fillStyle = COLORS[k]; ctx.globalAlpha = s === 5 ? 1 : 0.65; ctx.fillRect(cx - CS / 2 + 2, cy - CS / 2 + 2, CS - 4, CS - 4); ctx.globalAlpha = 1;
       }
-      const mvs = turn === 0 && phase === 'choose' ? legal(0, dice) : [];
-      // quân cờ
+      const mvs = turn === mySlot && phase === 'choose' && winner < 0 ? legal(mySlot, dice) : [];
       const stack = {};
       for (let k = 0; k < 4; k++) pcs[k].forEach((p, i) => {
         const c = cellOf(k, p, i), key = c.join(',');
         const n = stack[key] = (stack[key] || 0) + 1;
         let [cx, cy] = px(c); if (p >= 0) { cx += (n - 1) * 6; cy -= (n - 1) * 6; }
-        const hl = k === 0 && mvs.includes(i);
+        const hl = k === mySlot && mvs.includes(i);
         ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(cx, cy + 12, 12, 5, 0, 0, 7); ctx.fill();
         ctx.fillStyle = COLORS[k]; ctx.strokeStyle = hl ? '#fff' : '#222'; ctx.lineWidth = hl ? 4 + Math.sin(performance.now() / 120) : 2;
         ctx.beginPath(); ctx.arc(cx, cy, 14, 0, 7); ctx.fill(); ctx.stroke();
         ctx.fillStyle = '#fff'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        if (k === 0) ctx.fillText(String(i + 1), cx, cy + 1);
+        if (k === mySlot) ctx.fillText(String(i + 1), cx, cy + 1);
       });
       ctx.textBaseline = 'alphabetic';
-      // xúc xắc + thông báo
       const dx = 560, dy = 70;
-      ctx.fillStyle = turn === 0 ? '#fff' : '#ddd'; ctx.strokeStyle = COLORS[turn]; ctx.lineWidth = 4;
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = COLORS[turn]; ctx.lineWidth = 4;
       ctx.beginPath(); ctx.roundRect(dx - 30, dy - 30, 60, 60, 10); ctx.fill(); ctx.stroke();
       const shown = rolling > 0 ? ri(1, 6) : dice;
       ctx.fillStyle = '#111';
       (pip[shown] || []).forEach(([a, b]) => { ctx.beginPath(); ctx.arc(dx + a * 15, dy + b * 15, 5, 0, 7); ctx.fill(); });
-      ctx.fillStyle = '#fff'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
-      ctx.fillText(NAMES[turn], dx, dy + 52);
+      ctx.fillStyle = COLORS[turn]; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(isHuman(turn) ? slots[turn].name : `Máy ${CN[turn]}`, dx, dy + 52);
       ctx.textAlign = 'left'; ctx.font = 'bold 15px sans-serif'; ctx.fillStyle = '#ffd166';
-      const lines = [];
-      let line = ''; for (const w of msg.split(' ')) { if ((line + w).length > 22) { lines.push(line); line = ''; } line += w + ' '; } lines.push(line);
+      const lines = []; let line = '';
+      for (const w of String(msg).split(' ')) { if ((line + w).length > 22) { lines.push(line); line = ''; } line += w + ' '; } lines.push(line);
       lines.forEach((l, i) => ctx.fillText(l, 14, 40 + i * 20));
+      if (turn === mySlot && winner < 0 && phase === 'roll') { ctx.fillStyle = '#4ade80'; ctx.fillText('👉 Tới lượt bạn!', 14, 140); ctx.font = '13px sans-serif'; ctx.fillText('Space / click để tung', 14, 160); }
+      ctx.fillStyle = COLORS[mySlot]; ctx.font = 'bold 13px sans-serif'; ctx.fillText(`Bạn là quân ${CN[mySlot]}`, 14, 380);
       ctx.fillStyle = '#9aa4c7'; ctx.font = '13px sans-serif';
-      pcs.forEach((a, k) => ctx.fillText(`${NAMES[k].split(' ')[0]} ${NAMES[k].split(' ').slice(-1)[0]}: ${a.filter((p) => p === 43).length}/4 về đích`, 14, 400 + k * 18));
+      pcs.forEach((a, k) => ctx.fillText(`${isHuman(k) ? slots[k].name : 'Máy ' + CN[k]}: ${a.filter((p) => p === 43).length}/4`, 14, 402 + k * 17));
     },
   };
 }
 
-/* ========================= BẮN TANK ========================= */
-function tankGame(api) {
+/* ========================= BẮN TANK — chơi 1 người hoặc co-op nhiều người ========================= */
+function tankGame(api, o = {}) {
   const { ctx } = api;
+  const guest = o.mode === 'guest', mySlot = o.mySlot || 0;
+  const slots = o.slots || [{ name: 'Bạn' }];
+  const remote = o.remote || [];
+  const isDown = (slot, code) => (slot === mySlot ? api.down.has(code) : !!(remote[slot] && remote[slot].has(code)));
   const T = 24, COLS = 26, ROWS = 20, OX = 8, HALF = 10;
-  let map, tanks, bullets, stage = 1, score = 0, lives = 3, toSpawn, spawnT = 1, dead = false, flash = 0;
-  const player = { x: 0, y: 0, dir: 0, cool: 0, inv: 0, ply: true };
+  const PCOL = [['#facc15', '#fde68a'], ['#38bdf8', '#bae6fd'], ['#4ade80', '#bbf7d0'], ['#f472b6', '#fbcfe8']];
+  let map, tanks = [], bullets = [], stage = 1, score = 0, toSpawn = 0, spawnT = 1, dead = false, flash = 0, mapVer = 0, sentVer = -1;
+  const pls = slots.map((s, i) => ({ x: 0, y: 0, dir: 0, cool: 0, inv: 2, lives: 3, alive: true, slot: i, name: s.name || 'Bạn', tx: 0, ty: 0 }));
   const SPAWNS = [[1, 0], [12, 0], [24, 0]];
+  const homeX = (i) => OX + T * (10.5 + 1.6 * i), homeY = 19.5 * T - 2;
   function gen() {
-    map = Array.from({ length: ROWS }, (_, r) => Array.from({ length: COLS }, (_, c) => (Math.random() < 0.2 ? 1 : Math.random() < 0.04 ? 2 : 0)));
+    map = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => (Math.random() < 0.2 ? 1 : Math.random() < 0.04 ? 2 : 0)));
     for (let r = 17; r < ROWS; r++) for (let c = 10; c < 16; c++) map[r][c] = 0;
     for (const [c] of SPAWNS) for (let r = 0; r < 3; r++) for (let d = -1; d <= 1; d++) if (map[r] && map[r][c + d] !== undefined) map[r][c + d] = 0;
-    // tường gạch che quanh chỗ xuất phát
     for (const c of [9, 16]) for (let r = 17; r < ROWS; r++) map[r][c] = 1;
-    tanks = []; bullets = [];
-    toSpawn = 6 + stage * 2; spawnT = 1;
-    Object.assign(player, { x: OX + 13 * T, y: 19.5 * T - 2, dir: 0, cool: 0, inv: 2 });
+    tanks = []; bullets = []; mapVer++;
+    toSpawn = 6 + stage * 2 + (slots.length - 1) * 4; spawnT = 1;
+    for (const p of pls) if (p.alive) Object.assign(p, { x: homeX(p.slot), y: homeY, dir: 0, cool: 0, inv: 2 });
   }
-  gen();
+  if (!guest) gen(); else { map = Array.from({ length: ROWS }, () => Array(COLS).fill(0)); pls.forEach((p) => { p.x = p.tx = homeX(p.slot); p.y = p.ty = homeY; }); }
   const solid = (c, r) => c < 0 || r < 0 || c >= COLS || r >= ROWS || map[r][c] > 0;
   const tileAt = (x, y) => [Math.floor((x - OX) / T), Math.floor(y / T)];
   function blocked(t, nx, ny) {
@@ -266,9 +286,9 @@ function tankGame(api) {
       const [c, r] = tileAt(nx + sx * HALF, ny + sy * HALF);
       if (solid(c, r)) return true;
     }
-    for (const o of [player, ...tanks]) {
-      if (o === t || (o === player && o.dead)) continue;
-      if (Math.abs(o.x - nx) < HALF * 2 && Math.abs(o.y - ny) < HALF * 2) return true;
+    for (const q of [...pls.filter((p) => p.alive), ...tanks]) {
+      if (q === t) continue;
+      if (Math.abs(q.x - nx) < HALF * 2 && Math.abs(q.y - ny) < HALF * 2) return true;
     }
     return false;
   }
@@ -279,63 +299,104 @@ function tankGame(api) {
     if (!blocked(t, nx, ny)) { t.x = nx; t.y = ny; return true; }
     return false;
   }
-  function shoot(t, own) {
-    bullets.push({ x: t.x + DX[t.dir] * 14, y: t.y + DY[t.dir] * 14, dir: t.dir, own });
+  const shoot = (t, own) => bullets.push({ x: t.x + DX[t.dir] * 14, y: t.y + DY[t.dir] * 14, dir: t.dir, own });
+  function killPlayer(p) {
+    if (!p.alive || p.inv > 0) return;
+    p.lives--; if (p.slot === mySlot) flash = 0.5;
+    if (p.lives <= 0) {
+      p.alive = false;
+      if (!pls.some((q) => q.alive)) { dead = true; api.over(score, 'GAME OVER'); }
+      return;
+    }
+    Object.assign(p, { x: homeX(p.slot), y: homeY, dir: 0, inv: 2.5 });
   }
-  function killPlayer() {
-    if (player.inv > 0) return;
-    lives--; flash = 0.5;
-    if (lives <= 0) { dead = true; api.over(score); return; }
-    Object.assign(player, { x: OX + 13 * T, y: 19.5 * T - 2, dir: 0, inv: 2.5 });
+  const nearest = (t) => { let b = null, bd = 1e9; for (const p of pls) if (p.alive) { const d = Math.hypot(p.x - t.x, p.y - t.y); if (d < bd) { bd = d; b = p; } } return b; };
+  function hostUpdate(dt) {
+    flash = Math.max(0, flash - dt);
+    for (const p of pls) {
+      if (!p.alive) continue;
+      p.inv = Math.max(0, p.inv - dt); p.cool -= dt;
+      if (isDown(p.slot, 'ArrowUp')) step(p, 0, 100 * dt);
+      else if (isDown(p.slot, 'ArrowDown')) step(p, 2, 100 * dt);
+      else if (isDown(p.slot, 'ArrowLeft')) step(p, 3, 100 * dt);
+      else if (isDown(p.slot, 'ArrowRight')) step(p, 1, 100 * dt);
+      if (isDown(p.slot, 'Space') && p.cool <= 0) { shoot(p, 'p'); p.cool = 0.4; }
+    }
+    spawnT -= dt;
+    if (spawnT <= 0 && toSpawn > 0 && tanks.length < Math.min(7, 3 + Math.floor(stage / 2) + slots.length - 1)) {
+      const [c, r] = SPAWNS[ri(0, 2)], x = OX + (c + 0.5) * T, y = (r + 0.5) * T + 2;
+      if (!blocked(null, x, y)) { tanks.push({ x, y, dir: 2, turn: rnd(0.5, 2), fire: rnd(0.8, 2), speed: 60 + stage * 6 }); toSpawn--; spawnT = 2.2; }
+    }
+    for (const t of tanks) {
+      t.turn -= dt; t.fire -= dt;
+      const ok = step(t, t.dir, t.speed * dt);
+      if (!ok || t.turn <= 0) {
+        t.turn = rnd(0.6, 2.2);
+        const r = Math.random(), tp = nearest(t);
+        t.dir = r < 0.4 ? 2 : r < 0.55 && tp ? (tp.x < t.x ? 3 : 1) : ri(0, 3);
+      }
+      if (t.fire <= 0) { shoot(t, 'e'); t.fire = rnd(0.9, 2.2); }
+    }
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      const b = bullets[i];
+      b.x += DX[b.dir] * 280 * dt; b.y += DY[b.dir] * 280 * dt;
+      const [c, r] = tileAt(b.x, b.y);
+      let gone = false;
+      if (solid(c, r)) {
+        if (r >= 0 && c >= 0 && r < ROWS && c < COLS && map[r][c] === 1) {
+          map[r][c] = 0; mapVer++;
+          const pc = b.dir % 2 === 0 ? [[c - 1, r], [c + 1, r]] : [[c, r - 1], [c, r + 1]];
+          for (const [a, bb] of pc) if (map[bb] && map[bb][a] === 1 && Math.random() < 0.5) map[bb][a] = 0;
+        }
+        gone = true;
+      } else if (b.own === 'p') {
+        for (let j = tanks.length - 1; j >= 0; j--) if (Math.hypot(tanks[j].x - b.x, tanks[j].y - b.y) < 13) { tanks.splice(j, 1); score += 100; api.setScore(score); gone = true; break; }
+      } else {
+        for (const p of pls) if (p.alive && Math.hypot(p.x - b.x, p.y - b.y) < 12) { killPlayer(p); gone = true; break; }
+      }
+      if (gone) bullets.splice(i, 1);
+    }
+    for (const t of tanks) for (const p of pls) if (p.alive && Math.abs(t.x - p.x) < 20 && Math.abs(t.y - p.y) < 20 && Math.random() < 0.02) killPlayer(p);
+    if (!dead && toSpawn === 0 && !tanks.length) { stage++; score += 500; api.setScore(score); gen(); }
   }
   return {
     update(dt) {
+      if (guest) {
+        const f = Math.min(1, dt * 18);
+        for (const p of pls) { p.x += (p.tx - p.x) * f; p.y += (p.ty - p.y) * f; }
+        for (const t of tanks) { t.x += (t.tx - t.x) * f; t.y += (t.ty - t.y) * f; }
+        flash = Math.max(0, flash - dt);
+        return;
+      }
       if (dead) return;
-      flash = Math.max(0, flash - dt); player.inv = Math.max(0, player.inv - dt); player.cool -= dt;
-      const d = api.down;
-      if (d.has('ArrowUp') || d.has('KeyW')) step(player, 0, 100 * dt);
-      else if (d.has('ArrowDown') || d.has('KeyS')) step(player, 2, 100 * dt);
-      else if (d.has('ArrowLeft') || d.has('KeyA')) step(player, 3, 100 * dt);
-      else if (d.has('ArrowRight') || d.has('KeyD')) step(player, 1, 100 * dt);
-      if (d.has('Space') && player.cool <= 0) { shoot(player, 'p'); player.cool = 0.4; }
-      // sinh địch
-      spawnT -= dt;
-      if (spawnT <= 0 && toSpawn > 0 && tanks.length < Math.min(5, 3 + Math.floor(stage / 2))) {
-        const [c, r] = SPAWNS[ri(0, 2)], x = OX + (c + 0.5) * T, y = (r + 0.5) * T + 2;
-        if (!blocked(null, x, y)) { tanks.push({ x, y, dir: 2, turn: rnd(0.5, 2), fire: rnd(0.8, 2), speed: 60 + stage * 6 }); toSpawn--; spawnT = 2.2; }
-      }
-      for (const t of tanks) {
-        t.turn -= dt; t.fire -= dt;
-        const ok = step(t, t.dir, t.speed * dt);
-        if (!ok || t.turn <= 0) {
-          t.turn = rnd(0.6, 2.2);
-          const r = Math.random();
-          t.dir = r < 0.4 ? 2 : r < 0.55 ? (player.x < t.x ? 3 : 1) : ri(0, 3);
-        }
-        if (t.fire <= 0) { shoot(t, 'e'); t.fire = rnd(0.9, 2.2); }
-      }
-      // đạn
-      for (let i = bullets.length - 1; i >= 0; i--) {
-        const b = bullets[i];
-        b.x += DX[b.dir] * 280 * dt; b.y += DY[b.dir] * 280 * dt;
-        const [c, r] = tileAt(b.x, b.y);
-        let gone = false;
-        if (solid(c, r)) {
-          if (r >= 0 && c >= 0 && r < ROWS && c < COLS && map[r][c] === 1) {
-            map[r][c] = 0;
-            const pc = b.dir % 2 === 0 ? [[c - 1, r], [c + 1, r]] : [[c, r - 1], [c, r + 1]];
-            for (const [a, bb] of pc) if (map[bb] && map[bb][a] === 1 && Math.random() < 0.5) map[bb][a] = 0;
-          }
-          gone = true;
-        } else if (b.own === 'p') {
-          for (let j = tanks.length - 1; j >= 0; j--) if (Math.hypot(tanks[j].x - b.x, tanks[j].y - b.y) < 13) { tanks.splice(j, 1); score += 100; api.setScore(score); gone = true; break; }
-        } else if (Math.hypot(player.x - b.x, player.y - b.y) < 12) { killPlayer(); gone = true; }
-        if (gone) bullets.splice(i, 1);
-      }
-      for (const t of tanks) if (Math.abs(t.x - player.x) < 20 && Math.abs(t.y - player.y) < 20 && Math.random() < 0.02) killPlayer();
-      if (toSpawn === 0 && !tanks.length) { stage++; score += 500; api.setScore(score); gen(); }
+      hostUpdate(dt);
     },
     keyDown() {},
+    slotKey() {},
+    slotLeft(slot) { const p = pls[slot]; if (p) { p.alive = false; if (!pls.some((q) => q.alive)) { dead = true; api.over(score, 'GAME OVER'); } } },
+    getState() {
+      const s = {
+        pls: pls.map((p) => ({ x: p.x, y: p.y, dir: p.dir, inv: p.inv, lives: p.lives, alive: p.alive, slot: p.slot, name: p.name })),
+        tanks: tanks.map((t) => [t.x, t.y, t.dir]), bullets: bullets.map((b) => [b.x, b.y, b.dir, b.own]), stage, score, toSpawn,
+      };
+      if (mapVer !== sentVer) { s.map = map; sentVer = mapVer; }
+      return s;
+    },
+    setState(s) {
+      if (s.map) map = s.map;
+      s.pls.forEach((n, i) => {
+        const p = pls[i]; if (!p) return;
+        if (p.slot === mySlot && n.lives < p.lives) flash = 0.5;
+        Object.assign(p, { dir: n.dir, inv: n.inv, lives: n.lives, alive: n.alive, tx: n.x, ty: n.y });
+        if (Math.abs(p.x - n.x) > 60 || Math.abs(p.y - n.y) > 60) { p.x = n.x; p.y = n.y; }
+      });
+      tanks = s.tanks.map((t, i) => {
+        const old = tanks[i];
+        return { x: old ? old.x : t[0], y: old ? old.y : t[1], tx: t[0], ty: t[1], dir: t[2] };
+      });
+      bullets = s.bullets.map((b) => ({ x: b[0], y: b[1], dir: b[2], own: b[3] }));
+      stage = s.stage; score = s.score; toSpawn = s.toSpawn; api.setScore(score);
+    },
     draw() {
       ctx.fillStyle = '#111'; ctx.fillRect(0, 0, W, H);
       ctx.fillStyle = '#000'; ctx.fillRect(OX, 0, COLS * T, ROWS * T);
@@ -354,16 +415,21 @@ function tankGame(api) {
         ctx.fillStyle = '#222'; ctx.fillRect(-10, -10, 5, 20); ctx.fillRect(5, -10, 5, 20);
         ctx.fillStyle = body; ctx.fillRect(-6, -8, 12, 16);
         ctx.fillStyle = trim; ctx.beginPath(); ctx.arc(0, 0, 5, 0, 7); ctx.fill();
-        ctx.fillStyle = trim; ctx.fillRect(-1.5, -14, 3, 12);
+        ctx.fillRect(-1.5, -14, 3, 12);
         ctx.restore();
       };
       for (const t of tanks) drawTank(t, '#ef4444', '#fca5a5');
-      if (!dead && (player.inv <= 0 || Math.floor(player.inv * 10) % 2 === 0)) drawTank(player, '#facc15', '#fde68a');
+      for (const p of pls) {
+        if (!p.alive || (p.inv > 0 && Math.floor(p.inv * 10) % 2)) continue;
+        drawTank(p, PCOL[p.slot % 4][0], PCOL[p.slot % 4][1]);
+        if (pls.length > 1) { ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(p.name, p.x, p.y - 16); }
+      }
       ctx.fillStyle = '#fff';
       for (const b of bullets) { ctx.beginPath(); ctx.arc(b.x, b.y, 3, 0, 7); ctx.fill(); }
       if (flash > 0) { ctx.fillStyle = `rgba(255,0,0,${flash * 0.5})`; ctx.fillRect(0, 0, W, H); }
       ctx.fillStyle = '#fff'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'left';
-      ctx.fillText(`Màn ${stage}  ·  ❤ ${lives}  ·  Địch còn: ${toSpawn + tanks.length}  ·  Điểm ${score}`, OX + 6, 14);
+      const me = pls[mySlot] || pls[0];
+      ctx.fillText(`Màn ${stage}  ·  ❤ ${me.lives}  ·  Địch còn: ${toSpawn + tanks.length}  ·  Điểm ${score}` + (pls.length > 1 ? `  ·  ${pls.map((p) => p.name + ':' + (p.alive ? p.lives : '✖')).join(' ')}` : ''), OX + 6, 14);
     },
   };
 }
@@ -427,13 +493,18 @@ function racing(api) {
   };
 }
 
-/* ========================= BOMBERMAN ========================= */
-function bomber(api) {
+/* ========================= BOMBERMAN — chiến dịch 1 người hoặc đấu nhiều người ========================= */
+function bomber(api, o = {}) {
   const { ctx } = api;
+  const guest = o.mode === 'guest', mySlot = o.mySlot || 0, multi = !!o.multi;
+  const slots = o.slots || [{ name: 'Bạn' }];
+  const remote = o.remote || [];
+  const isDown = (slot, code) => (slot === mySlot ? api.down.has(code) : !!(remote[slot] && remote[slot].has(code)));
   const T = 32, COLS = 15, ROWS = 13, OX = 80, OY = 32;
-  let grid, bombs, flames, items, enemies, stage = 1, score = 0, lives = 3, dead = false, msgT = 0;
-  const P = { c: 1, r: 1, x: 0, y: 0, fc: 1, fr: 1, t: 1, inv: 0, max: 1, range: 2 };
+  const CORNERS = [[1, 1], [13, 1], [1, 11], [13, 11]], PCOL = ['#2563eb', '#ef4444', '#16a34a', '#eab308'];
   const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+  let grid, bombs = [], flames = [], items = [], enemies = [], pl = [], stage = 1, score = 0, dead = false, msgT = 0, endText = null;
+  const mk = (i) => ({ c: CORNERS[i][0], r: CORNERS[i][1], fc: CORNERS[i][0], fr: CORNERS[i][1], t: 1, dur: 0.13, inv: 2, max: 1, range: 2, alive: true, lives: multi ? 1 : 3, slot: i, name: (slots[i] && slots[i].name) || 'Bạn' });
   function gen() {
     grid = Array.from({ length: ROWS }, (_, r) => Array.from({ length: COLS }, (_, c) => {
       if (r === 0 || c === 0 || r === ROWS - 1 || c === COLS - 1 || (r % 2 === 0 && c % 2 === 0)) return 1;
@@ -441,12 +512,16 @@ function bomber(api) {
     }));
     for (const [c, r] of [[1, 1], [1, 2], [2, 1], [13, 1], [12, 1], [13, 2], [1, 11], [1, 10], [2, 11], [13, 11], [12, 11], [13, 10]]) grid[r][c] = 0;
     bombs = []; flames = []; items = [];
-    Object.assign(P, { c: 1, r: 1, fc: 1, fr: 1, t: 1, inv: 2 });
-    const spots = [[13, 1], [1, 11], [13, 11], [7, 5], [7, 7], [5, 5]];
-    enemies = spots.slice(0, Math.min(6, 2 + stage)).map(([c, r]) => ({ c, r, fc: c, fr: r, t: 1, dir: ri(0, 3), cool: rnd(1, 3) }));
-    for (const e of enemies) grid[e.r][e.c] = 0;
+    if (!pl.length) pl = slots.map((s, i) => mk(i));
+    else pl.forEach((p) => { if (p.alive) Object.assign(p, { c: CORNERS[p.slot][0], r: CORNERS[p.slot][1], fc: CORNERS[p.slot][0], fr: CORNERS[p.slot][1], t: 1, inv: 2 }); });
+    if (multi) { enemies = []; for (let i = slots.length; i < 4; i++) enemies.push({ c: CORNERS[i][0], r: CORNERS[i][1], fc: CORNERS[i][0], fr: CORNERS[i][1], t: 1, dir: ri(0, 3), cool: rnd(1, 3) }); }
+    else {
+      const spots = [[13, 1], [1, 11], [13, 11], [7, 5], [7, 7], [5, 5]];
+      enemies = spots.slice(0, Math.min(6, 2 + stage)).map(([c, r]) => ({ c, r, fc: c, fr: r, t: 1, dir: ri(0, 3), cool: rnd(1, 3) }));
+      for (const e of enemies) grid[e.r][e.c] = 0;
+    }
   }
-  gen();
+  if (!guest) gen(); else { grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0)); pl = slots.map((s, i) => mk(i)); }
   const bombAt = (c, r) => bombs.find((b) => b.c === c && b.r === r);
   const free = (c, r) => grid[r] && grid[r][c] === 0 && !bombAt(c, r);
   function blast(c, r, range) {
@@ -473,12 +548,11 @@ function bomber(api) {
         if (Math.random() < 0.28) items.push({ c: x, r: y, type: Math.random() < 0.5 ? 'range' : 'bomb' });
       }
       flames.push({ c: x, r: y, t: 0.45 });
-      const o = bombAt(x, y); if (o) o.t = 0;
-      items = items.filter((it) => !(it.c === x && it.r === y && grid[y][x] === 0 && it.fresh !== true && false));
+      const ob = bombAt(x, y); if (ob) ob.t = 0;
     }
     api.setScore(score);
   }
-  function bfsSafe(c, r, danger, maxDepth, extraBomb) {
+  function bfsSafe(c, r, danger, maxDepth) {
     const seen = new Set([c + ',' + r]), q = [[c, r, 0, null]];
     while (q.length) {
       const [x, y, d, first] = q.shift();
@@ -492,70 +566,104 @@ function bomber(api) {
     }
     return -1;
   }
-  const killP = () => {
-    if (P.inv > 0) return;
-    lives--;
-    if (lives <= 0) { dead = true; api.over(score); return; }
-    Object.assign(P, { c: 1, r: 1, fc: 1, fr: 1, t: 1, inv: 2.5 });
-  };
-  function stepActor(a, c, r, dur) { a.fc = a.c; a.fr = a.r; a.c = c; a.r = r; a.t = 0; a.dur = dur; }
-  return {
-    update(dt) {
-      if (dead) return;
-      msgT = Math.max(0, msgT - dt); P.inv = Math.max(0, P.inv - dt);
-      for (const a of [P, ...enemies]) if (a.t < 1) a.t = Math.min(1, a.t + dt / (a.dur || 0.13));
-      // người chơi
-      if (P.t >= 1) {
-        const d = api.down;
-        const dir = (d.has('ArrowUp') || d.has('KeyW')) ? 0 : (d.has('ArrowRight') || d.has('KeyD')) ? 1 : (d.has('ArrowDown') || d.has('KeyS')) ? 2 : (d.has('ArrowLeft') || d.has('KeyA')) ? 3 : -1;
-        if (dir >= 0) { const nx = P.c + DIRS[dir][0], ny = P.r + DIRS[dir][1]; if (free(nx, ny)) stepActor(P, nx, ny, 0.13); }
+  function finish(text) { if (dead) return; dead = true; endText = text; api.over(score, text); }
+  function killP(p) {
+    if (!p.alive || p.inv > 0) return;
+    p.lives--;
+    if (p.lives <= 0) {
+      p.alive = false;
+      if (!multi) finish('GAME OVER');
+      return;
+    }
+    Object.assign(p, { c: CORNERS[p.slot][0], r: CORNERS[p.slot][1], fc: CORNERS[p.slot][0], fr: CORNERS[p.slot][1], t: 1, inv: 2.5 });
+  }
+  const stepActor = (a, c, r, dur) => { a.fc = a.c; a.fr = a.r; a.c = c; a.r = r; a.t = 0; a.dur = dur; };
+  function placeBomb(p) {
+    if (!p.alive || bombs.filter((b) => b.owner === p).length >= p.max || bombAt(p.c, p.r)) return;
+    bombs.push({ c: p.c, r: p.r, t: 2, range: p.range, owner: p });
+  }
+  function hostUpdate(dt) {
+    msgT = Math.max(0, msgT - dt);
+    for (const a of [...pl, ...enemies]) if (a.t < 1) a.t = Math.min(1, a.t + dt / (a.dur || 0.13));
+    for (const p of pl) {
+      if (!p.alive) continue;
+      p.inv = Math.max(0, p.inv - dt);
+      if (p.t >= 1) {
+        const dir = isDown(p.slot, 'ArrowUp') ? 0 : isDown(p.slot, 'ArrowRight') ? 1 : isDown(p.slot, 'ArrowDown') ? 2 : isDown(p.slot, 'ArrowLeft') ? 3 : -1;
+        if (dir >= 0) { const nx = p.c + DIRS[dir][0], ny = p.r + DIRS[dir][1]; if (free(nx, ny)) stepActor(p, nx, ny, 0.13); }
       }
-      // bom
-      for (const b of bombs.slice()) { b.t -= dt; if (b.t <= 0 && bombs.includes(b)) explode(b); }
-      for (const f of flames) f.t -= dt;
-      flames = flames.filter((f) => f.t > 0);
-      // vật phẩm
-      const it = items.findIndex((i) => i.c === P.c && i.r === P.r && P.t > 0.5);
-      if (it >= 0) { const i = items.splice(it, 1)[0]; if (i.type === 'range') P.range++; else P.max++; score += 20; api.setScore(score); }
-      // địch
-      const danger = dangerSet();
-      for (let i = enemies.length - 1; i >= 0; i--) {
-        const e = enemies[i];
-        if (flames.some((f) => f.c === e.c && f.r === e.r)) { enemies.splice(i, 1); score += 100; api.setScore(score); continue; }
-        if (e.t >= 1) {
-          e.cool -= dt;
-          const here = danger.has(e.c + ',' + e.r);
-          if (here) {
-            const d = bfsSafe(e.c, e.r, danger, 8);
-            if (d >= 0) { stepActor(e, e.c + DIRS[d][0], e.r + DIRS[d][1], 0.2); e.dir = d; }
-          } else {
-            const nearP = Math.abs(e.c - P.c) + Math.abs(e.r - P.r) <= 4;
-            let wantBomb = e.cool <= 0 && !bombs.some((b) => b.owner === e) && (nearP || DIRS.some(([dx, dy]) => grid[e.r + dy][e.c + dx] === 2)) && Math.random() < 0.5;
-            if (wantBomb) {
-              const test = new Set([...danger, ...blast(e.c, e.r, 2).map(([x, y]) => x + ',' + y)]);
-              if (bfsSafe(e.c, e.r, test, 6) >= 0) { bombs.push({ c: e.c, r: e.r, t: 2, range: 2, owner: e }); e.cool = rnd(3, 6); }
+    }
+    for (const b of bombs.slice()) { b.t -= dt; if (b.t <= 0 && bombs.includes(b)) explode(b); }
+    for (const f of flames) f.t -= dt;
+    flames = flames.filter((f) => f.t > 0);
+    for (const p of pl) {
+      if (!p.alive) continue;
+      const it = items.findIndex((i) => i.c === p.c && i.r === p.r && p.t > 0.5);
+      if (it >= 0) { const i = items.splice(it, 1)[0]; if (i.type === 'range') p.range++; else p.max++; score += 20; api.setScore(score); }
+    }
+    const danger = dangerSet();
+    const humans = pl.filter((p) => p.alive);
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      if (flames.some((f) => f.c === e.c && f.r === e.r)) { enemies.splice(i, 1); score += 100; api.setScore(score); continue; }
+      let tp = null, bd = 1e9; for (const p of humans) { const d = Math.abs(p.c - e.c) + Math.abs(p.r - e.r); if (d < bd) { bd = d; tp = p; } }
+      if (e.t >= 1) {
+        e.cool -= dt;
+        if (danger.has(e.c + ',' + e.r)) {
+          const d = bfsSafe(e.c, e.r, danger, 8);
+          if (d >= 0) { stepActor(e, e.c + DIRS[d][0], e.r + DIRS[d][1], 0.2); e.dir = d; }
+        } else {
+          const nearP = tp && bd <= 4;
+          const wantBomb = e.cool <= 0 && !bombs.some((b) => b.owner === e) && (nearP || DIRS.some(([dx, dy]) => grid[e.r + dy][e.c + dx] === 2)) && Math.random() < 0.5;
+          if (wantBomb) {
+            const test = new Set([...danger, ...blast(e.c, e.r, 2).map(([x, y]) => x + ',' + y)]);
+            if (bfsSafe(e.c, e.r, test, 6) >= 0) { bombs.push({ c: e.c, r: e.r, t: 2, range: 2, owner: e }); e.cool = rnd(3, 6); }
+          }
+          const opts = [];
+          for (let d = 0; d < 4; d++) { const nx = e.c + DIRS[d][0], ny = e.r + DIRS[d][1]; if (free(nx, ny) && !danger.has(nx + ',' + ny)) opts.push(d); }
+          if (opts.length) {
+            let d = opts.includes(e.dir) && Math.random() < 0.7 ? e.dir : opts[ri(0, opts.length - 1)];
+            if (tp && Math.random() < 0.3) {
+              const toward = opts.filter((op) => Math.abs(e.c + DIRS[op][0] - tp.c) + Math.abs(e.r + DIRS[op][1] - tp.r) < bd);
+              if (toward.length) d = toward[ri(0, toward.length - 1)];
             }
-            const opts = [];
-            for (let d = 0; d < 4; d++) { const nx = e.c + DIRS[d][0], ny = e.r + DIRS[d][1]; if (free(nx, ny) && !danger.has(nx + ',' + ny)) opts.push(d); }
-            if (opts.length) {
-              let d = opts.includes(e.dir) && Math.random() < 0.7 ? e.dir : opts[ri(0, opts.length - 1)];
-              if (Math.random() < 0.3) {
-                const toward = opts.filter((o) => Math.abs(e.c + DIRS[o][0] - P.c) + Math.abs(e.r + DIRS[o][1] - P.r) < Math.abs(e.c - P.c) + Math.abs(e.r - P.r));
-                if (toward.length) d = toward[ri(0, toward.length - 1)];
-              }
-              e.dir = d; stepActor(e, e.c + DIRS[d][0], e.r + DIRS[d][1], 0.28);
-            }
+            e.dir = d; stepActor(e, e.c + DIRS[d][0], e.r + DIRS[d][1], 0.28);
           }
         }
-        if (e.c === P.c && e.r === P.r) killP();
       }
-      if (flames.some((f) => f.c === P.c && f.r === P.r)) killP();
-      if (!enemies.length && !dead) { stage++; score += 300 * (stage - 1); api.setScore(score); msgT = 1.5; gen(); }
-    },
-    keyDown(c) {
+      if (!multi) for (const p of humans) if (e.c === p.c && e.r === p.r) killP(p);
+    }
+    for (const p of pl) if (p.alive && flames.some((f) => f.c === p.c && f.r === p.r)) killP(p);
+    if (dead) return;
+    if (multi) {
+      const al = pl.filter((p) => p.alive);
+      if (!al.length) finish(enemies.length ? 'Máy thắng!' : 'Hoà!');
+      else if (al.length + enemies.length <= 1) finish(`🏆 ${al[0].name} thắng!`);
+      else if (al.length === 1 && !enemies.length) finish(`🏆 ${al[0].name} thắng!`);
+    } else if (!enemies.length) { stage++; score += 300 * (stage - 1); api.setScore(score); msgT = 1.5; gen(); }
+  }
+  return {
+    update(dt) {
+      if (guest) {
+        for (const a of [...pl, ...enemies]) if (a.t < 1) a.t = Math.min(1, a.t + dt / (a.dur || 0.13));
+        for (const b of bombs) b.t -= dt;
+        for (const f of flames) f.t -= dt;
+        flames = flames.filter((f) => f.t > 0); msgT = Math.max(0, msgT - dt);
+        return;
+      }
       if (dead) return;
-      if (c === 'Space' && bombs.filter((b) => b.owner === P).length < P.max && !bombAt(P.c, P.r)) bombs.push({ c: P.c, r: P.r, t: 2, range: P.range, owner: P });
+      hostUpdate(dt);
     },
+    keyDown(c) { if (!guest && c === 'Space' && pl[mySlot]) placeBomb(pl[mySlot]); },
+    slotKey(slot, c) { if (c === 'Space' && pl[slot]) placeBomb(pl[slot]); },
+    slotLeft(slot) { const p = pl[slot]; if (p) { p.alive = false; } },
+    getState: () => ({
+      grid, stage, score, msgT,
+      bombs: bombs.map((b) => ({ c: b.c, r: b.r, t: b.t })), flames: flames.map((f) => ({ c: f.c, r: f.r, t: f.t })), items,
+      pl: pl.map((p) => ({ c: p.c, r: p.r, fc: p.fc, fr: p.fr, t: p.t, dur: p.dur, inv: p.inv, max: p.max, range: p.range, alive: p.alive, lives: p.lives, slot: p.slot, name: p.name })),
+      enemies: enemies.map((e) => ({ c: e.c, r: e.r, fc: e.fc, fr: e.fr, t: e.t, dur: e.dur })),
+    }),
+    setState(s) { grid = s.grid; bombs = s.bombs; flames = s.flames; items = s.items; pl = s.pl; enemies = s.enemies; stage = s.stage; score = s.score; msgT = s.msgT; api.setScore(score); },
     draw() {
       ctx.fillStyle = '#10151f'; ctx.fillRect(0, 0, W, H);
       for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
@@ -587,16 +695,19 @@ function bomber(api) {
         ctx.fillStyle = '#fff'; ctx.fillRect(x - 7, y - 5, 5, 6); ctx.fillRect(x + 2, y - 5, 5, 6); ctx.fillStyle = '#111'; ctx.fillRect(x - 5, y - 3, 2, 3); ctx.fillRect(x + 4, y - 3, 2, 3);
         ctx.fillRect(x - 6, y + 5, 12, 2);
       }
-      if (!dead && (P.inv <= 0 || Math.floor(P.inv * 10) % 2 === 0)) {
-        const [x, y] = pos(P);
+      for (const p of pl) {
+        if (!p.alive || (p.inv > 0 && Math.floor(p.inv * 10) % 2)) continue;
+        const [x, y] = pos(p);
         ctx.fillStyle = '#f8fafc'; ctx.beginPath(); ctx.arc(x, y - 2, 11, 0, 7); ctx.fill();
-        ctx.fillStyle = '#2563eb'; ctx.fillRect(x - 8, y + 6, 16, 8);
+        ctx.fillStyle = PCOL[p.slot % 4]; ctx.fillRect(x - 8, y + 6, 16, 8);
         ctx.fillStyle = '#fbd5b0'; ctx.fillRect(x - 7, y - 6, 14, 9);
         ctx.fillStyle = '#111'; ctx.fillRect(x - 4, y - 4, 2, 4); ctx.fillRect(x + 2, y - 4, 2, 4);
-        ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(x, y - 13, 3, 0, 7); ctx.fill();
+        ctx.fillStyle = PCOL[p.slot % 4]; ctx.beginPath(); ctx.arc(x, y - 13, 3, 0, 7); ctx.fill();
+        if (pl.length > 1) { ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(p.name, x, y - 20); }
       }
+      const me = pl[mySlot] || pl[0] || { max: 1, range: 2, lives: 0 };
       ctx.fillStyle = '#fff'; ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'left';
-      ctx.fillText(`Màn ${stage}   ❤ ${lives}   💣 ${P.max}   🔥 ${P.range}   Địch: ${enemies.length}   Điểm: ${score}`, OX, 22);
+      ctx.fillText(multi ? `Đấu: ${pl.map((p) => p.name + (p.alive ? '' : ' ✖')).join(' · ')}   💣 ${me.max}   🔥 ${me.range}` : `Màn ${stage}   ❤ ${me.lives}   💣 ${me.max}   🔥 ${me.range}   Địch: ${enemies.length}   Điểm: ${score}`, OX, 22);
       if (msgT > 0) { ctx.fillStyle = '#ffd166'; ctx.font = 'bold 34px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('QUA MÀN!', W / 2, H / 2); }
     },
   };
@@ -604,24 +715,38 @@ function bomber(api) {
 
 /* ========================= VỎ MÁY GAME ========================= */
 const FACTORY = { tetris, ludo, tank: tankGame, racing, bomber };
-let root = null, canvas, ctx, current = null, currentId = null, raf = 0, last = 0, overScore = null, onCloseCb = null;
+const MULTI = { ludo: 'Cờ cá ngựa', tank: 'Bắn tank (co-op)', bomber: 'Bomberman (đấu)' };
+let root = null, canvas, ctx, current = null, currentId = null, raf = 0, last = 0, overScore = null, overTitle = null, onCloseCb = null;
+let net = null, getMyId = () => null, session = null, lobby = null, counts = {}, sendAcc = 0, view = 'menu';
 const down = new Set();
-const api = { get ctx() { return ctx; }, down, setScore: (s) => { root.querySelector('#arcScore').textContent = 'Điểm: ' + s; }, over: (s) => { overScore = s; } };
+const api = { get ctx() { return ctx; }, down, setScore: (s) => { root.querySelector('#arcScore').textContent = 'Điểm: ' + s; }, over: (s, title) => { if (overScore === null) { overScore = s; overTitle = title || null; } } };
+const ALIAS = { KeyW: 'ArrowUp', KeyA: 'ArrowLeft', KeyS: 'ArrowDown', KeyD: 'ArrowRight' };
+const $a = (s) => root.querySelector(s);
 
 function build() {
   const st = document.createElement('style');
   st.textContent = `
   #arcade{position:fixed;inset:0;z-index:60;background:rgba(5,5,15,.82);display:flex;align-items:center;justify-content:center}
   #arcade.hidden{display:none}
+  #arcade .hidden{display:none}
   .arc-card{background:#141428;border:3px solid #7c3aed;border-radius:18px;padding:12px;box-shadow:0 0 40px #7c3aed88;max-width:96vw}
   .arc-head{display:flex;gap:10px;align-items:center;margin-bottom:8px;color:#fff}
   .arc-head b{flex:1;font-size:17px}
+  #arcade button{cursor:pointer;border:0;border-radius:8px;padding:8px 12px;background:#3a3a5c;color:#fff;font-size:14px}
+  #arcade button:hover{background:#4a4a74}
   #arcMenu{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;width:min(640px,86vw);padding:10px}
-  #arcMenu button{padding:18px 8px;font-size:17px;background:#26264a;border:2px solid #4c3b8f;border-radius:14px;color:#fff;cursor:pointer}
-  #arcMenu button:hover{background:#3b2f78;border-color:#a78bfa}
-  #arcMenu button span{display:block;font-size:34px}
-  #arcMenu button small{display:block;font-size:11px;opacity:.7;margin-top:4px}
-  #arcCanvas{display:block;width:min(640px,92vw);height:auto;aspect-ratio:4/3;background:#000;border-radius:8px;image-rendering:auto}
+  .arc-g{background:#26264a;border:2px solid #4c3b8f;border-radius:14px;color:#fff;padding:12px 8px;text-align:center}
+  .arc-g:hover{border-color:#a78bfa}
+  .arc-g .ic{font-size:34px}
+  .arc-g small{display:block;font-size:11px;opacity:.7;margin:3px 0 6px}
+  .arc-g .row{display:flex;gap:6px;justify-content:center;flex-wrap:wrap}
+  .arc-g .row button{padding:6px 8px;font-size:12px}
+  .arc-g .row button.on{background:#7c3aed}
+  #arcLobby{width:min(640px,86vw);padding:20px;color:#fff;text-align:center}
+  #arcLobby h3{margin:0 0 12px}
+  #arcPlayers{display:flex;flex-direction:column;gap:6px;margin:12px auto;max-width:360px}
+  #arcPlayers div{background:#26264a;border-radius:8px;padding:8px}
+  #arcCanvas{display:block;width:min(640px,92vw);height:auto;aspect-ratio:4/3;background:#000;border-radius:8px}
   #arcHelp{color:#aab;font-size:12px;margin-top:8px;text-align:center;max-width:640px}
   #arcCanvas.hidden{display:none}
   `;
@@ -630,69 +755,173 @@ function build() {
   root.id = 'arcade'; root.className = 'hidden';
   root.innerHTML = `<div class="arc-card"><div class="arc-head"><b id="arcTitle">🕹️ MÁY GAME CONSOLE</b><span id="arcScore"></span>
     <button id="arcBack" class="hidden">☰ Menu</button><button id="arcClose">✖ Thoát</button></div>
-    <div id="arcMenu"></div><canvas id="arcCanvas" width="${W}" height="${H}" class="hidden"></canvas><div id="arcHelp">Chọn một trò chơi · Esc: thoát</div></div>`;
+    <div id="arcMenu"></div>
+    <div id="arcLobby" class="hidden"><h3 id="arcLobbyTitle"></h3><div id="arcPlayers"></div><div id="arcLobbyNote" style="font-size:13px;opacity:.75;margin-bottom:12px"></div>
+      <button id="arcStart">▶ Bắt đầu</button> <button id="arcLeave">Rời phòng</button></div>
+    <canvas id="arcCanvas" width="${W}" height="${H}" class="hidden"></canvas><div id="arcHelp">Chọn một trò chơi · Esc: thoát</div></div>`;
   document.body.appendChild(root);
-  canvas = root.querySelector('#arcCanvas'); ctx = canvas.getContext('2d');
-  root.querySelector('#arcClose').onclick = () => Arcade.close();
-  root.querySelector('#arcBack').onclick = () => backToMenu();
+  canvas = $a('#arcCanvas'); ctx = canvas.getContext('2d');
+  $a('#arcClose').onclick = () => Arcade.close();
+  $a('#arcBack').onclick = () => backToMenu();
+  $a('#arcLeave').onclick = () => backToMenu();
+  $a('#arcStart').onclick = () => { if (lobby) net.emit('arc-start', { game: lobby.game }); };
   canvas.addEventListener('pointerdown', (e) => {
-    const r = canvas.getBoundingClientRect();
-    current && current.click && current.click((e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height);
+    if (!current) return;
+    const r = canvas.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height;
+    if (session && session.mode === 'guest') net.emit('arc-input', { game: session.game, data: { t: 'click', x, y } });
+    else current.click && current.click(x, y);
   });
   window.addEventListener('keydown', onKeyDown, true);
-  window.addEventListener('keyup', (e) => { if (!Arcade.isOpen) return; e.stopImmediatePropagation(); down.delete(e.code); down.delete(ALIAS[e.code]); }, true);
-  window.addEventListener('blur', () => down.clear());
+  window.addEventListener('keyup', onKeyUp, true);
+  window.addEventListener('blur', () => { down.clear(); sendDown(); });
+}
+function sendDown() { if (session && session.mode === 'guest') net.emit('arc-input', { game: session.game, data: { t: 'down', list: [...down] } }); }
+function onKeyUp(e) {
+  if (!Arcade.isOpen) return;
+  e.stopImmediatePropagation(); down.delete(e.code); down.delete(ALIAS[e.code]); sendDown();
 }
 function renderMenu() {
-  const m = root.querySelector('#arcMenu');
-  m.innerHTML = GAMES.map((g) => `<button data-id="${g.id}"><span>${g.icon}</span>${g.name}<small>Kỷ lục: ${localStorage.getItem('arcade-best-' + g.id) || 0}</small></button>`).join('');
-  m.onclick = (e) => { const b = e.target.closest('button'); if (b) startGame(b.dataset.id); };
+  const m = $a('#arcMenu');
+  m.innerHTML = GAMES.map((g) => {
+    const best = localStorage.getItem('arcade-best-' + g.id) || 0;
+    const online = MULTI[g.id] ? `<button data-online="${g.id}">👥 Online${counts[g.id] ? ' (' + counts[g.id] + ')' : ''}</button>` : '';
+    return `<div class="arc-g"><div class="ic">${g.icon}</div><b>${g.name}</b><small>Kỷ lục: ${best}</small><div class="row"><button data-id="${g.id}">${MULTI[g.id] ? '🤖 1 người' : '▶ Chơi'}</button>${online}</div></div>`;
+  }).join('');
+  m.onclick = (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.online) joinLobby(b.dataset.online); else if (b.dataset.id) startGame(b.dataset.id);
+  };
 }
+function show(v) {
+  view = v;
+  $a('#arcMenu').classList.toggle('hidden', v !== 'menu');
+  $a('#arcLobby').classList.toggle('hidden', v !== 'lobby');
+  canvas.classList.toggle('hidden', v !== 'game');
+  $a('#arcBack').classList.toggle('hidden', v === 'menu');
+}
+function leaveNet() { if (net && (session || lobby)) net.emit('arc-leave'); session = null; lobby = null; }
 function backToMenu() {
-  current = null; currentId = null; overScore = null;
-  canvas.classList.add('hidden'); root.querySelector('#arcMenu').classList.remove('hidden'); root.querySelector('#arcBack').classList.add('hidden');
-  root.querySelector('#arcTitle').textContent = '🕹️ MÁY GAME CONSOLE'; root.querySelector('#arcScore').textContent = '';
-  root.querySelector('#arcHelp').textContent = 'Chọn một trò chơi · Esc: thoát'; renderMenu();
+  leaveNet();
+  current = null; currentId = null; overScore = null; overTitle = null;
+  show('menu'); $a('#arcTitle').textContent = '🕹️ MÁY GAME CONSOLE'; $a('#arcScore').textContent = '';
+  $a('#arcHelp').textContent = 'Chọn một trò chơi · Esc: thoát'; renderMenu();
 }
-function startGame(id) {
-  currentId = id; overScore = null; down.clear();
+function joinLobby(game) {
+  if (!net) return;
+  lobby = { game, players: [], host: null };
+  show('lobby');
+  $a('#arcLobbyTitle').textContent = `👥 Phòng chờ — ${MULTI[game]}`;
+  $a('#arcPlayers').innerHTML = '<div>Đang vào phòng...</div>';
+  $a('#arcStart').classList.add('hidden');
+  $a('#arcHelp').textContent = 'Chờ bạn bè vào cùng máy rồi chủ phòng bấm Bắt đầu · Esc: về menu';
+  net.emit('arc-join', { game });
+}
+function renderLobby() {
+  if (!lobby || view !== 'lobby') return;
+  const meId = getMyId(), max = 4;
+  $a('#arcPlayers').innerHTML = lobby.players.map((p) => `<div>${p.id === lobby.host ? '👑 ' : '🙂 '}${p.name}${p.id === meId ? ' (bạn)' : ''}</div>`).join('');
+  const isHost = lobby.host === meId, n = lobby.players.length;
+  const note = { ludo: 'Ghế trống do máy chơi · tối đa 4 người', tank: 'Co-op: cùng nhau diệt xe địch · tối đa 4 người', bomber: 'Đấu tối đa 4 người, ghế trống do máy chơi · người sống sót cuối cùng thắng' }[lobby.game];
+  $a('#arcLobbyNote').textContent = `${n}/${max} người · ${note}` + (isHost ? (n < 2 ? ' — cần ít nhất 2 người' : '') : ' — chờ chủ phòng bắt đầu...');
+  $a('#arcStart').classList.toggle('hidden', !isHost);
+  $a('#arcStart').disabled = n < 2;
+}
+function startGame(id, opts) {
+  currentId = id; overScore = null; overTitle = null; down.clear();
   const g = GAMES.find((x) => x.id === id);
-  root.querySelector('#arcMenu').classList.add('hidden'); canvas.classList.remove('hidden'); root.querySelector('#arcBack').classList.remove('hidden');
-  root.querySelector('#arcTitle').textContent = `${g.icon} ${g.name}`; root.querySelector('#arcScore').textContent = 'Điểm: 0';
-  root.querySelector('#arcHelp').textContent = g.help;
-  current = FACTORY[id](api);
+  show('game');
+  $a('#arcTitle').textContent = `${g.icon} ${g.name}` + (opts && opts.mode ? ' (online)' : ''); $a('#arcScore').textContent = 'Điểm: 0';
+  $a('#arcHelp').textContent = g.help;
+  current = FACTORY[id](api, opts || {});
 }
-const ALIAS = { KeyW: 'ArrowUp', KeyA: 'ArrowLeft', KeyS: 'ArrowDown', KeyD: 'ArrowRight' };
+function startSession(game, players, host) {
+  const meId = getMyId();
+  const mySlot = players.findIndex((p) => p.id === meId);
+  if (mySlot < 0) return;
+  session = { game, mode: host === meId ? 'host' : 'guest', remote: [], mySlot, sendAcc: 0 };
+  lobby = { game, players, host };
+  let slots;
+  if (game === 'ludo') slots = [0, 1, 2, 3].map((k) => (players[k] ? { name: players[k].name, human: true } : { human: false }));
+  else slots = players.map((p) => ({ name: p.name, human: true }));
+  startGame(game, { mode: session.mode, slots, mySlot, remote: session.remote, multi: true });
+  const help = GAMES.find((x) => x.id === game).help;
+  $a('#arcHelp').textContent = help + (session.mode === 'guest' ? ' · (bạn đang chơi online, chủ phòng chạy game)' : ' · (bạn là chủ phòng)');
+}
 function onKeyDown(e) {
   if (!Arcade.isOpen) return;
   e.stopImmediatePropagation();
   const c = e.code;
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(c)) e.preventDefault();
-  if (c === 'Escape') { if (current) backToMenu(); else Arcade.close(); return; }
-  if (current && overScore !== null && c === 'Enter') { startGame(currentId); return; }
-  const c2 = ALIAS[c] || c; // WASD hoạt động như phím mũi tên ở mọi trò
+  if (c === 'Escape') { if (view !== 'menu') backToMenu(); else Arcade.close(); return; }
+  if (current && overScore !== null && c === 'Enter') {
+    if (session) { if (session.mode === 'host') net.emit('arc-restart', { game: session.game }); }
+    else startGame(currentId);
+    return;
+  }
+  const c2 = ALIAS[c] || c;
   down.add(c); down.add(c2);
-  if (current && overScore === null) current.keyDown && current.keyDown(c2, e.repeat);
+  if (!current || overScore !== null) return;
+  if (session && session.mode === 'guest') {
+    sendDown();
+    if (!e.repeat) net.emit('arc-input', { game: session.game, data: { t: 'key', c: c2 } });
+  } else current.keyDown && current.keyDown(c2, e.repeat);
 }
 function loop(t) {
   raf = requestAnimationFrame(loop);
   const dt = Math.min(0.05, (t - last) / 1000); last = t;
   if (!current) return;
-  if (overScore === null) current.update(dt);
+  current.update(dt);
+  if (session && session.mode === 'host' && current.getState) {
+    session.sendAcc += dt;
+    if (session.sendAcc >= (session.game === 'ludo' ? 0.1 : 0.05)) {
+      session.sendAcc = 0;
+      net.emit('arc-state', { game: session.game, data: { s: current.getState(), over: overScore === null ? null : { score: overScore, title: overTitle } } });
+    }
+  }
   current.draw();
   if (overScore !== null) {
     ctx.fillStyle = 'rgba(0,0,0,.65)'; ctx.fillRect(0, 150, W, 170);
     ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = 'bold 40px sans-serif';
-    ctx.fillText(currentId === 'ludo' ? 'KẾT THÚC' : 'GAME OVER', W / 2, 215);
+    ctx.fillText(overTitle || 'GAME OVER', W / 2, 215);
     const key = 'arcade-best-' + currentId, best = +localStorage.getItem(key) || 0;
-    if (overScore > best) localStorage.setItem(key, overScore);
+    if (!session && currentId !== 'ludo' && overScore > best) localStorage.setItem(key, overScore);
     ctx.font = '22px sans-serif'; ctx.fillStyle = '#ffd166';
-    if (currentId !== 'ludo') ctx.fillText(`Điểm: ${overScore}   ·   Kỷ lục: ${Math.max(best, overScore)}`, W / 2, 255);
-    ctx.fillStyle = '#fff'; ctx.font = '18px sans-serif'; ctx.fillText('Enter: chơi lại · Esc: về menu', W / 2, 295);
+    if (currentId !== 'ludo' && !(session && currentId === 'bomber')) ctx.fillText(`Điểm: ${overScore}` + (session ? '' : `   ·   Kỷ lục: ${Math.max(best, overScore)}`), W / 2, 255);
+    ctx.fillStyle = '#fff'; ctx.font = '18px sans-serif';
+    ctx.fillText(session && session.mode === 'guest' ? 'Chờ chủ phòng bắt đầu ván mới · Esc: về menu' : 'Enter: chơi lại · Esc: về menu', W / 2, 295);
   }
+}
+function setupNet(socket, myIdFn) {
+  net = { emit: (...a) => socket.emit(...a) }; getMyId = myIdFn;
+  socket.on('arc-counts', (c) => { counts = c; if (Arcade.isOpen && view === 'menu') renderMenu(); });
+  socket.on('arc-lobby', (l) => { if (lobby && lobby.game === l.game && view === 'lobby') { lobby = l; renderLobby(); } });
+  socket.on('arc-started', ({ game, players, host }) => { if (Arcade.isOpen && lobby && lobby.game === game) startSession(game, players, host); });
+  socket.on('arc-input', ({ slot, data }) => {
+    if (!session || session.mode !== 'host' || !current) return;
+    if (data.t === 'down') session.remote[slot] = new Set(data.list);
+    else if (data.t === 'key') current.slotKey && current.slotKey(slot, data.c);
+    else if (data.t === 'click') current.slotClick && current.slotClick(slot, data.x, data.y);
+  });
+  socket.on('arc-state', ({ game, data }) => {
+    if (!session || session.mode !== 'guest' || session.game !== game || !current) return;
+    current.setState(data.s);
+    if (data.over && overScore === null) api.over(data.over.score, data.over.title);
+    if (!data.over && overScore !== null) { overScore = null; overTitle = null; }
+  });
+  socket.on('arc-left', ({ slot }) => { if (session && session.mode === 'host' && current && current.slotLeft) current.slotLeft(slot); });
+  socket.on('arc-ended', ({ game, reason }) => {
+    if (Arcade.isOpen && (session || lobby) && (session ? session.game : lobby.game) === game) {
+      session = null; lobby = null; backToMenu();
+      $a('#arcHelp').textContent = `⚠ ${reason}`;
+    }
+  });
+  socket.on('arc-full', () => { if (view === 'lobby') { backToMenu(); $a('#arcHelp').textContent = '⚠ Phòng đã đủ người'; } });
+  socket.on('arc-busy', () => { if (view === 'lobby') { backToMenu(); $a('#arcHelp').textContent = '⚠ Ván đang diễn ra, thử lại sau'; } });
 }
 export const Arcade = {
   isOpen: false,
+  setNet(socket, myIdFn) { setupNet(socket, myIdFn); },
+  setCounts(c) { counts = c || {}; },
   open(onClose) {
     if (!root) build();
     onCloseCb = onClose; Arcade.isOpen = true; down.clear();
@@ -701,6 +930,7 @@ export const Arcade = {
   },
   close() {
     if (!Arcade.isOpen) return;
+    leaveNet();
     Arcade.isOpen = false; root.classList.add('hidden'); cancelAnimationFrame(raf); current = null; down.clear();
     if (onCloseCb) onCloseCb();
   },

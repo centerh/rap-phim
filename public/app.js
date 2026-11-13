@@ -6,6 +6,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 const $ = (id) => document.getElementById(id);
 const socket = io ? io() : null;
+Arcade.setNet(socket, () => myId);
 
 /* ---------------- Avatar ---------------- */
 const texLoader = new THREE.TextureLoader();
@@ -977,7 +978,9 @@ function showBubble(id, text) {  const p = players.get(id);
 }
 
 /* ---------------- Networking ---------------- */
-socket.on('init', ({ id, players: list, video, tables, chat, pool, pp, clawState }) => {
+socket.on('init', ({ id, players: list, video, tables, chat, pool, pp, clawState, poolSeats: ps, arcCounts }) => {
+  if (ps) poolSeats = ps;
+  if (arcCounts) Arcade.setCounts(arcCounts);
   if (clawState && game.claw) { Object.assign(game.claw.s, clawState); game.claw.t = Object.assign({}, clawState); game.claw.prevHold = clawState.hold; }
   if (pool) applyPool(pool);
   if (pp) { ppNames = { A: pp.A, B: pp.B }; ppIds = pp.ids || {}; ppScore = pp.score; drawBoard(pp.A, pp.B, pp.score); }
@@ -1475,11 +1478,12 @@ function setHud(html, extra) {
   $('hudText').innerHTML = html;
   $('powerWrap').classList.toggle('hidden', extra !== 'pool');
   $('hudReset').classList.toggle('hidden', extra !== 'pool');
+  $('hudSit').classList.toggle('hidden', extra !== 'pool');
   hud.classList.toggle('hidden', !html);
 }
 const ppEnd = (s) => ({ x: PP_C.x + (s === 'A' ? -2.2 : 2.2), z: PP_C.z });
 function leaveGames() {
-  if (poolMode) { poolMode = false; game.cue.visible = false; game.aimLine.visible = false; charging = 0; }
+  if (poolMode) { poolMode = false; game.cue.visible = false; game.aimLine.visible = false; charging = 0; socket.emit('pool-stand'); }
   if (ppSide) { socket.emit('pp-leave'); ppSide = null; }
   if (me && me.dancing) { socket.emit('dance', false); me.dancing = false; }
   if (clawJoined) { socket.emit('claw-leave'); clawJoined = false; }
@@ -1499,7 +1503,7 @@ function startGame(id, u) {
 function enterGame(w) {
   if (w.game === 'pool') {
     gameMode = 'pool'; poolMode = true; me.ry = Math.PI;
-    setHud('🎱 <b>Bi-a</b>: di chuột để ngắm · <b>giữ chuột rồi thả</b> để đánh · Esc: thoát', 'pool');
+    setHud('', 'pool'); refreshPoolHud();
   } else if (w.game === 'pp') {
     gameMode = 'pp'; ppSide = w.side; me.ry = w.side === 'A' ? Math.PI / 2 : -Math.PI / 2;
     socket.emit('pp-join', { side: w.side }); refreshPpHud();
@@ -1552,7 +1556,7 @@ canvas.addEventListener('pointermove', (e) => {
 });
 canvas.addEventListener('pointerdown', (e) => {
   if (gameMode === 'pp') return ppHit();
-  if (poolMode && !game.poolMoving) {
+  if (poolMode && !game.poolMoving && canShoot()) {
     const pt = pointerToTable(e), cb = game.poolPos[0];
     if (pt && cb) aimAngle = Math.atan2(pt.z - POOL_C.z - cb[1], pt.x - POOL_C.x - cb[0]);
     charging = performance.now();
@@ -1573,6 +1577,23 @@ function applyPool(st) {
     m.position.set(POOL_C.x + b[0], SURF + BR, POOL_C.z + b[1]);
   });
 }
+// --- bi-a nhiều người (chia lượt) ---
+let poolSeats = { active: false, A: null, B: null, idA: null, idB: null, turn: 'A' };
+const mySeat = () => poolSeats.idA === myId || poolSeats.idB === myId;
+const canShoot = () => !poolSeats.active || poolSeats[poolSeats.turn === 'A' ? 'idA' : 'idB'] === myId;
+function refreshPoolHud() {
+  if (gameMode !== 'pool') return;
+  hud.classList.remove('hidden');
+  let h = '🎱 <b>Bi-a</b>: di chuột để ngắm · <b>giữ chuột rồi thả</b> để đánh · Esc: thoát';
+  if (poolSeats.active) {
+    const cur = poolSeats[poolSeats.turn];
+    h += `<br>🏆 <b>Ván 2 người</b>: ${poolSeats.A} (bi 1-5) vs ${poolSeats.B} (bi 6-10) · Lượt: <b>${cur}</b>${canShoot() ? ' 👈 tới lượt bạn!' : ''}`;
+  } else h += mySeat() ? '<br>⏳ Đang chờ người chơi thứ 2 ngồi vào bàn...' : '<br>Bấm "Ngồi chơi 2 người" để thi đấu chia lượt (hoặc cứ đánh tự do)';
+  $('hudText').innerHTML = h;
+  $('hudSit').textContent = mySeat() ? '🚪 Đứng dậy' : '🎯 Ngồi chơi 2 người';
+}
+$('hudSit').onclick = () => socket.emit(mySeat() ? 'pool-stand' : 'pool-sit');
+socket.on('pool-seats', (s) => { poolSeats = s; refreshPoolHud(); });
 socket.on('pool', applyPool);
 socket.on('pool-event', ({ text }) => addChat('', text, true));
 
@@ -1671,7 +1692,7 @@ function updateGameVisuals(dt, now) {
   }
   // gậy bi-a + đường ngắm
   const cb = game.poolPos[0];
-  const show = poolMode && !game.poolMoving && cb && !cb[2];
+  const show = poolMode && !game.poolMoving && cb && !cb[2] && canShoot();
   game.cue.visible = game.aimLine.visible = !!show;
   if (show) {
     const dx = Math.cos(aimAngle), dz = Math.sin(aimAngle);
