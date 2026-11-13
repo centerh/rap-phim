@@ -731,7 +731,7 @@ function buildGameZone() {
   /* ---- Bàn bi-a ---- */
   const pool = new THREE.Group(); pool.position.set(POOL_C.x, 0, POOL_C.z);
   const wood = L(0x4a2a14), felt = L(0x0b6a3b);
-  put(pool, new THREE.BoxGeometry(3.5, 0.3, 2.0), wood, 0, 0.78, 0);
+  put(pool, new THREE.BoxGeometry(3.5, 0.3, 2.0), wood, 0, 0.765, 0);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) put(pool, new THREE.BoxGeometry(0.2, 0.65, 0.2), wood, sx * 1.6, 0.33, sz * 0.88);
   for (const sz of [-1, 1]) put(pool, new THREE.BoxGeometry(3.5, 0.12, 0.25), wood, 0, 0.99, sz * 0.875);
   for (const sx of [-1, 1]) put(pool, new THREE.BoxGeometry(0.25, 0.12, 2.0), wood, sx * 1.625, 0.99, 0);
@@ -745,11 +745,12 @@ function buildGameZone() {
     if (i >= 9) { const st = new THREE.Mesh(new THREE.SphereGeometry(BR * 1.01, 16, 10, 0, 6.3, 1.2, 0.5), new THREE.MeshPhongMaterial({ color: 0xffffff })); b.add(st); }
   }
   // đèn treo trên bàn
-  put(pool, new THREE.CylinderGeometry(0.02, 0.02, 3, 6), BM(0x222222), 0, 3.8, 0);
-  put(pool, new THREE.ConeGeometry(0.9, 0.4, 20, 1, true), new THREE.MeshLambertMaterial({ color: 0x1a1a1a, side: THREE.DoubleSide }), 0, 2.4, 0);
-  put(pool, new THREE.CircleGeometry(0.7, 20), BM(0xfff0c0), 0, 2.38, 0).rotation.x = Math.PI / 2;
+  game.lamp = [put(pool, new THREE.CylinderGeometry(0.02, 0.02, 3, 6), BM(0x222222), 0, 3.8, 0),
+    put(pool, new THREE.ConeGeometry(0.9, 0.4, 20, 1, true), new THREE.MeshLambertMaterial({ color: 0x1a1a1a, side: THREE.DoubleSide }), 0, 2.4, 0),
+    put(pool, new THREE.CircleGeometry(0.7, 20), BM(0xfff0c0), 0, 2.38, 0)];
+  game.lamp[2].rotation.x = Math.PI / 2;
   pool.userData.gameId = 'pool'; scene.add(pool); clickables.push(pool);
-  const pl1 = new THREE.PointLight(0xfff0c0, 55, 11); pl1.position.set(POOL_C.x, 2.2, POOL_C.z); scene.add(pl1);
+  const pl1 = new THREE.PointLight(0xffffff, 30, 11); pl1.position.set(POOL_C.x, 2.2, POOL_C.z); scene.add(pl1);
   // gậy + đường ngắm
   const cue = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.022, 1.5, 8).rotateZ(Math.PI / 2), L(0xd9a066)); cue.visible = false; scene.add(cue); game.cue = cue;
   const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(1, 0, 0)]);
@@ -1506,6 +1507,7 @@ function updateGameVisuals(dt, now) {
     } else col.setHSL(0.75, 0.5, 0.14 + 0.03 * Math.sin(now / 700 + t.i + t.j));
   }
   game.mirror.rotation.y += dt * 0.8;
+  for (const m of game.lamp) m.visible = !poolMode;
   game.danceLight.color.setHSL(on ? (beat / 32) % 1 : 0.78, 1, 0.6);
   // quả bóng bàn
   const fl = game.ppFlight;
@@ -1611,8 +1613,8 @@ function loop(now) {
       camera.position.lerp(new THREE.Vector3(0, 7, -13.9 + dist), Math.min(1, dt * 6));
       camera.lookAt(0, 7, -13.9);
     } else if (poolMode) {
-      camera.position.lerp(new THREE.Vector3(POOL_C.x, 3.5, POOL_C.z + 2.5), Math.min(1, dt * 6));
-      camera.lookAt(POOL_C.x, 0.9, POOL_C.z - 0.1);
+      camera.position.lerp(new THREE.Vector3(POOL_C.x, 4.4, POOL_C.z + 2.0), Math.min(1, dt * 6));
+      camera.lookAt(POOL_C.x, 0.9, POOL_C.z);
     } else if (fpMode) {
       camera.position.set(me.x, 1.85 + (mine.group.userData.bob || 0), me.z);
       camera.lookAt(
@@ -1628,7 +1630,7 @@ function loop(now) {
     }
     camera.position.z = Math.min(camera.position.z, 17.6);
     camera.position.x = Math.min(15.4, Math.max(-15.4, camera.position.x));
-    mine.group.visible = !(fpMode && !fsMode);
+    mine.group.visible = !((fpMode && !fsMode) || poolMode);
   }
 
   for (const [id, p] of players) {
