@@ -1875,6 +1875,7 @@ $('vipBtn').onclick = openVip;
 $('vipClose').onclick = closeVip;
 addEventListener('keydown', (e) => { if (e.key === 'Escape' && vipOpen) closeVip(); });
 for (const id of ['vipCode', 'pwNew', 'vipLabel']) $(id).addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { if (id === 'vipCode') $('vipGo').click(); else if (id === 'pwNew') $('pwSet').click(); else $('vipGen').click(); } });
+$('vipEye').onclick = () => { const i = $('vipCode'); i.type = i.type === 'password' ? 'text' : 'password'; };
 $('vipGo').onclick = () => { lastCode = $('vipCode').value.trim(); if (lastCode) socket.emit('vip-login', { code: lastCode }); };
 $('vipOut').onclick = () => { localStorage.removeItem('cinema-vip'); isVip = isAdmin = false; socket.emit('vip-login', { code: '' }); refreshVipUi(); };
 socket.on('vip-status', (s) => {
