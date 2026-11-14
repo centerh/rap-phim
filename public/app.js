@@ -4,6 +4,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { Arcade } from './arcade.js';
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 let currentRoom = 'main', lastCount = 1;
+const myUid = localStorage.getItem('cinema-uid') || (() => { const u = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('cinema-uid', u); return u; })();
 
 const $ = (id) => document.getElementById(id);
 const socket = io ? io() : null;
@@ -454,6 +455,22 @@ if (savedName) $('name').value = savedName;
 const qRoom = new URLSearchParams(location.search).get('room');
 if (qRoom) $('room').value = qRoom;
 
+// danh sách phòng đang mở
+function loadRooms() {
+  fetch('/api/rooms').then((r) => r.json()).then((list) => {
+    const box = $('roomList');
+    box.innerHTML = list.length ? '' : '<span class="muted">Chưa có phòng nào đang mở — gõ tên phòng mới để tạo</span>';
+    for (const r of list) {
+      const b = document.createElement('button'); b.type = 'button'; b.dataset.n = r.name;
+      b.textContent = `${r.locked ? '🔒 ' : ''}${r.name} · ${r.players} 👥`; box.appendChild(b);
+    }
+  }).catch(() => {});
+}
+$('roomList').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { $('room').value = b.dataset.n; $('roomPw').focus(); } });
+$('roomRefresh').onclick = loadRooms;
+loadRooms();
+const roomTimer = setInterval(() => { if (!inLobby) clearInterval(roomTimer); else loadRooms(); }, 4000);
+
 /* ---------------- 3D cinema ---------------- */
 const canvas = $('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -474,6 +491,7 @@ addEventListener('resize', resize); resize();
 scene.add(new THREE.HemisphereLight(0x8c9cff, 0x1a0f1a, 0.8));
 const dl = new THREE.DirectionalLight(0xffffff, 0.55); dl.position.set(5, 12, 8); scene.add(dl);
 
+const themeRefs = { flags: { L: [], R: [] } };
 const clickables = [], seatsInfo = new Map(), tableGroups = new Map();
 const trophies = [], beams = [];
 const BOUND = { x: 14, zMin: -11, zMax: 17.3 };
@@ -570,6 +588,7 @@ function buildRoom() {
   const right = new THREE.Mesh(new THREE.PlaneGeometry(32, H), L(0x1c1608)); right.rotation.y = -Math.PI / 2; right.position.set(16, H / 2, 2); scene.add(right);
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(32, 32), L(0x05060c)); ceil.rotation.x = Math.PI / 2; ceil.position.set(0, H, 2); scene.add(ceil);
 
+  Object.assign(themeRefs, { fl, fr, left, right, ceil });
   // màn hình chiếu: "lỗ" trong suốt ở WebGL để lộ iframe YouTube (CSS3D) phía sau
   const frame = new THREE.Mesh(new THREE.PlaneGeometry(16.8, 9.8), new THREE.MeshBasicMaterial({ color: 0x050508 }));
   frame.position.set(0, 7, -13.95); scene.add(frame);
@@ -589,7 +608,7 @@ function buildRoom() {
   // biển WORLDS GRAND FINAL phía trên màn hình
   const title = new THREE.Mesh(new THREE.PlaneGeometry(8.6, 8.6 * 480 / 1024),
     new THREE.MeshBasicMaterial({ map: titleTexture(), transparent: true, fog: false }));
-  title.position.set(0, 14.6, -13.85); scene.add(title);
+  title.position.set(0, 14.6, -13.85); scene.add(title); themeRefs.title = title;
 
   // cờ BLG (trái) / GENG (phải) trên tường hai bên
   for (const s of [-1, 1]) {
@@ -599,7 +618,7 @@ function buildRoom() {
       for (let i = 0; i < pos.count; i++) pos.setZ(i, Math.sin(pos.getX(i) * 1.1 + pos.getY(i) * 0.6) * 0.25);
       geo.computeVertexNormals();
       const flag = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: flagTexture(s < 0), side: THREE.DoubleSide }));
-      flag.position.set(s * 15.6, 9, z); flag.rotation.y = s < 0 ? Math.PI / 2 : -Math.PI / 2; scene.add(flag);
+      flag.position.set(s * 15.6, 9, z); flag.rotation.y = s < 0 ? Math.PI / 2 : -Math.PI / 2; scene.add(flag); themeRefs.flags[s < 0 ? 'L' : 'R'].push(flag);
     }
   }
 
@@ -734,7 +753,7 @@ function buildGameZone() {
   const put = (parent, geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); parent.add(m); return m; };
 
   // tường sau + biển neon
-  const bw = new THREE.Mesh(new THREE.PlaneGeometry(32, 18), L(0x0a0b14)); bw.rotation.y = Math.PI; bw.position.set(0, 9, 18); scene.add(bw);
+  const bw = new THREE.Mesh(new THREE.PlaneGeometry(32, 18), L(0x0a0b14)); bw.rotation.y = Math.PI; bw.position.set(0, 9, 18); scene.add(bw); themeRefs.bw = bw;
   const signTex = bannerTexture(1024, 200, (ctx, w, h) => {
     ctx.textAlign = 'center'; ctx.font = '900 100px "Arial Black", sans-serif';
     ctx.shadowColor = '#ff4df0'; ctx.shadowBlur = 30; ctx.fillStyle = '#ffe3fc';
@@ -995,7 +1014,9 @@ function showBubble(id, text) {  const p = players.get(id);
 }
 
 /* ---------------- Networking ---------------- */
-socket.on('init', ({ id, players: list, video, tables, chat, pool, pp, clawState, poolSeats: ps, arcCounts }) => {
+socket.on('init', ({ id, players: list, video, tables, chat, pool, pp, clawState, poolSeats: ps, arcCounts, theme, locked, isOwner: own }) => {
+  roomLocked = !!locked; isOwner = !!own;
+  for (const [slot, data] of Object.entries(theme || {})) { themeData[slot] = data; applyTheme(slot, data); }
   if (ps) poolSeats = ps;
   if (arcCounts) Arcade.setCounts(arcCounts);
   if (clawState && game.claw) { Object.assign(game.claw.s, clawState); game.claw.t = Object.assign({}, clawState); game.claw.prevHold = clawState.hold; }
@@ -1182,17 +1203,25 @@ addEventListener('keydown', (e) => { if (e.key.toLowerCase() === 'v' && !inLobby
 canvas.addEventListener('wheel', (e) => { camDist = Math.min(16, Math.max(3, camDist + e.deltaY * 0.01)); });
 
 /* ---------------- Enter ---------------- */
-$('enter').onclick = () => {
+$('enter').onclick = async () => {
   const name = $('name').value.trim() || 'Khách' + Math.floor(Math.random() * 1000);
   localStorage.setItem('cinema-name', name);
   const room = ($('room').value.trim() || 'main').toLowerCase().replace(/[^\w-]/g, '') || 'main';
   currentRoom = room;
+  try {
+    const r = await fetch('/api/room-check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ room, password: $('roomPw').value, uid: myUid }) });
+    const j = await r.json();
+    if (!j.ok) { $('lobbyErr').textContent = '🔒 Phòng này có mật khẩu — hãy nhập đúng mật khẩu rồi bấm lại'; $('roomPw').focus(); return; }
+  } catch (e) { /* không kiểm tra được thì để máy chủ quyết định */ }
+  $('lobbyErr').textContent = '';
   inLobby = false;
   $('lobby').classList.add('hidden');
   for (const id of ['screenPanel', 'chat', 'help', 'emoteBar']) $(id).classList.remove('hidden');
   let cid = sessionStorage.getItem('cinema-cid');
   if (!cid) { cid = Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem('cinema-cid', cid); }
-  socket.emit('join', { room, name, look, cid });
+  socket.emit('join', { room, name, look, cid, uid: myUid, password: $('roomPw').value });
+  const savedVip = localStorage.getItem('cinema-vip');
+  if (savedVip) { lastCode = savedVip; socket.emit('vip-login', { code: savedVip }); }
   try { ensureAudio(); } catch (e) {}
   last = performance.now();
   requestAnimationFrame(loop);
@@ -1801,6 +1830,101 @@ function clawTick(dt) {
     else { T.mesh.rotation.z = 0; T.mesh.position.x = T.rest[0]; T.mesh.position.z = T.rest[1]; T.mesh.position.y = Math.max(CLAW_REST_Y, T.mesh.position.y - 3 * dt); }
   });
 }
+
+/* ---------------- VIP: đổi giao diện phòng bằng ảnh · mật khẩu phòng · cấp mã VIP ---------------- */
+const THEME_SLOTS = [
+  ['floor', '🟫 Sàn nhà', 1024, 1024], ['wallL', '🧱 Tường trái', 1024, 576], ['wallR', '🧱 Tường phải', 1024, 576], ['wallBack', '🧱 Tường khu trò chơi', 1024, 576],
+  ['ceiling', '⬛ Trần nhà', 1024, 576], ['flagL', '🚩 Cờ bên trái', 512, 768], ['flagR', '🚩 Cờ bên phải', 512, 768], ['title', '🏷️ Biển trên màn hình', 1024, 480],
+];
+const themeData = {}, themeOrig = {};
+function applyTheme(slot, data) {
+  const R = themeRefs;
+  const targets = ({ floor: [R.fl, R.fr], wallL: [R.left], wallR: [R.right], wallBack: [R.bw], ceiling: [R.ceil], flagL: R.flags.L, flagR: R.flags.R, title: [R.title] })[slot] || [];
+  const list = targets.filter(Boolean);
+  if (!data) { for (const m of list) if (themeOrig[m.uuid]) m.material = themeOrig[m.uuid]; return; }
+  const img = new Image();
+  img.onload = () => {
+    list.forEach((m, idx) => {
+      if (!themeOrig[m.uuid]) themeOrig[m.uuid] = m.material;
+      const tex = new THREE.Texture(img); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4; tex.needsUpdate = true;
+      if (slot === 'floor') { tex.repeat.set(0.5, 1); tex.offset.set(idx ? 0.5 : 0, 0); }
+      m.material = new THREE.MeshBasicMaterial({ map: tex, side: themeOrig[m.uuid].side, fog: false });
+    });
+  };
+  img.src = data;
+}
+let isVip = false, isAdmin = false, isOwner = false, roomLocked = false, lastCode = '', vipOpen = false;
+const vipModal = $('vipModal');
+function renderThemeSlots() {
+  const box = $('themeSlots');
+  box.innerHTML = THEME_SLOTS.map(([k, n]) => `<div class="tslot"><div class="th"></div><div class="nm">${n}</div><div><button data-up="${k}">Ảnh</button> ${themeData[k] ? `<button data-rm="${k}">✖</button>` : ''}</div></div>`).join('');
+  box.querySelectorAll('.th').forEach((el, i) => { const d = themeData[THEME_SLOTS[i][0]]; if (d) el.style.backgroundImage = `url(${d})`; });
+}
+function refreshVipUi() {
+  $('vipTheme').classList.toggle('hidden', !isVip);
+  $('vipAdmin').classList.toggle('hidden', !isAdmin);
+  $('roomSec').classList.toggle('hidden', !(isVip || isOwner));
+  $('vipOut').classList.toggle('hidden', !isVip);
+  $('vipMsg').textContent = isAdmin ? '✅ Bạn là ADMIN (đồng thời là VIP)' : isVip ? '✅ Bạn là VIP — có thể đổi giao diện phòng' : 'Chưa đăng nhập VIP';
+  $('pwNote').textContent = roomLocked ? '🔒 Phòng hiện đang có mật khẩu' : '🔓 Phòng hiện không có mật khẩu';
+  renderThemeSlots();
+}
+function openVip() { vipOpen = true; menuOpen = true; for (const k in keys) keys[k] = false; vipModal.classList.remove('hidden'); refreshVipUi(); }
+function closeVip() { vipOpen = false; menuOpen = false; vipModal.classList.add('hidden'); }
+$('vipBtn').onclick = openVip;
+$('vipClose').onclick = closeVip;
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && vipOpen) closeVip(); });
+for (const id of ['vipCode', 'pwNew', 'vipLabel']) $(id).addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { if (id === 'vipCode') $('vipGo').click(); else if (id === 'pwNew') $('pwSet').click(); else $('vipGen').click(); } });
+$('vipGo').onclick = () => { lastCode = $('vipCode').value.trim(); if (lastCode) socket.emit('vip-login', { code: lastCode }); };
+$('vipOut').onclick = () => { localStorage.removeItem('cinema-vip'); isVip = isAdmin = false; socket.emit('vip-login', { code: '' }); refreshVipUi(); };
+socket.on('vip-status', (s) => {
+  isVip = !!s.vip; isAdmin = !!s.admin;
+  if (isVip && lastCode) { localStorage.setItem('cinema-vip', lastCode); $('vipCode').value = ''; }
+  if (!isVip) { if (s.error && lastCode) $('vipMsg').textContent = '❌ ' + s.error; if (s.error && s.error !== 'Mã không đúng') localStorage.removeItem('cinema-vip'); if (s.error === 'Mã không đúng') localStorage.removeItem('cinema-vip'); }
+  refreshVipUi();
+  if (!isVip && s.error && lastCode) $('vipMsg').textContent = '❌ ' + s.error;
+  lastCode = '';
+});
+socket.on('vip-codes', (list) => {
+  const box = $('vipList'); box.innerHTML = '';
+  if (!list.length) { box.innerHTML = '<span class="muted">Chưa có mã nào — bấm "Tạo mã mới"</span>'; return; }
+  for (const c of list) {
+    const row = document.createElement('div'); row.className = 'vcode';
+    const code = document.createElement('code'); code.textContent = c.code;
+    const lb = document.createElement('span'); lb.textContent = c.label || '';
+    const cp = document.createElement('button'); cp.textContent = 'Sao chép'; cp.onclick = () => { navigator.clipboard && navigator.clipboard.writeText(c.code); cp.textContent = '✔ Đã chép'; };
+    const rv = document.createElement('button'); rv.textContent = 'Thu hồi'; rv.onclick = () => { if (confirm('Thu hồi mã ' + c.code + '?')) socket.emit('vip-revoke', { code: c.code }); };
+    row.append(code, lb, cp, rv); box.appendChild(row);
+  }
+});
+$('vipGen').onclick = () => { socket.emit('vip-gen', { label: $('vipLabel').value.trim() }); $('vipLabel').value = ''; };
+$('pwSet').onclick = () => { socket.emit('room-pw-set', { pw: $('pwNew').value }); $('pwNew').value = ''; };
+socket.on('room-info', (s) => { roomLocked = !!s.locked; if (vipOpen) refreshVipUi(); });
+socket.on('theme', ({ slot, data }) => { if (data) themeData[slot] = data; else delete themeData[slot]; applyTheme(slot, data); if (vipOpen) renderThemeSlots(); });
+$('themeResetAll').onclick = () => socket.emit('theme-reset-all');
+$('themeSlots').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.rm) return socket.emit('theme-set', { slot: b.dataset.rm, data: null });
+  const slot = b.dataset.up, def = THEME_SLOTS.find((s) => s[0] === slot);
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = () => {
+    const f = inp.files[0]; if (!f) return;
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas'); c.width = def[2]; c.height = def[3];
+      const x = c.getContext('2d'), s = Math.max(c.width / img.width, c.height / img.height);
+      x.drawImage(img, (c.width - img.width * s) / 2, (c.height - img.height * s) / 2, img.width * s, img.height * s);
+      let data = '';
+      for (const q of [0.85, 0.7, 0.55, 0.4]) { data = c.toDataURL('image/jpeg', q); if (data.length <= 430000) break; }
+      URL.revokeObjectURL(img.src);
+      if (data.length > 430000) return alert('Ảnh quá nặng, hãy chọn ảnh nhỏ hơn');
+      socket.emit('theme-set', { slot, data });
+    };
+    img.src = URL.createObjectURL(f);
+  };
+  inp.click();
+});
+socket.on('join-denied', () => { alert('Sai mật khẩu phòng!'); location.reload(); });
 
 /* ---------------- Main loop ---------------- */
 let last = 0, sendT = 0, lastSent = '';

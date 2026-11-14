@@ -2,13 +2,69 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const { Server } = require('socket.io');
+const crypto = require('crypto');
+const fs = require('fs');
 
 const app = express();
+app.use(express.json({ limit: '50kb' }));
 const server = http.createServer(app);
-const io = new Server(server, { maxHttpBufferSize: 2e6 });
+const io = new Server(server, { maxHttpBufferSize: 6e6 });
 
 app.use('/vendor/three', express.static(path.join(__dirname, 'node_modules/three')));
 app.use(express.static(path.join(__dirname, 'public')));
+app.get('/api/rooms', (req, res) => {
+  const out = [];
+  for (const [name, r] of rooms) if (r.players.size) out.push({ name, players: r.players.size, locked: !!(store.rooms[name] && store.rooms[name].pw) });
+  out.sort((a, b) => b.players - a.players);
+  res.json(out.slice(0, 30));
+});
+app.post('/api/room-check', (req, res) => {
+  const b = req.body || {};
+  const name = String(b.room || '').slice(0, 30).replace(/[^\w-]/g, '').toLowerCase() || 'main';
+  res.json({ ok: pwOk(store.rooms[name], b.password, b.uid) });
+});
+
+/* ---------- Lưu trữ: mã VIP, mật khẩu phòng, giao diện phòng (data/meta.json, KHÔNG đưa lên git) ---------- */
+const DATA_DIR = path.join(__dirname, 'data');
+try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) {}
+const META_FILE = path.join(DATA_DIR, 'meta.json');
+let store = { codes: {}, rooms: {} };
+try { store = Object.assign(store, JSON.parse(fs.readFileSync(META_FILE, 'utf8'))); } catch (e) {}
+let saveTimer = null;
+function saveStore() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    for (const [n, m] of Object.entries(store.rooms)) if (!m.pw && !Object.keys(m.theme || {}).length && !rooms.has(n)) delete store.rooms[n];
+    try { fs.writeFileSync(META_FILE, JSON.stringify(store)); } catch (e) {}
+  }, 1500);
+}
+const sha = (s) => crypto.createHash('sha256').update(String(s)).digest();
+const safeEq = (a, b) => crypto.timingSafeEqual(sha(a), sha(b));
+let ADMIN_KEY = (process.env.ADMIN_KEY || '').trim();
+if (!ADMIN_KEY) {
+  const kf = path.join(DATA_DIR, 'admin-key.txt');
+  try { ADMIN_KEY = fs.readFileSync(kf, 'utf8').trim(); } catch (e) {}
+  if (!ADMIN_KEY) { ADMIN_KEY = 'ADMIN-' + crypto.randomBytes(9).toString('hex').toUpperCase(); try { fs.writeFileSync(kf, ADMIN_KEY); } catch (e) {} }
+}
+console.log(`🔑 MÃ ADMIN (chỉ mình bạn biết): ${ADMIN_KEY}  — nhập ở nút 👑 trong game để tạo mã VIP cho người khác`);
+const ENV_VIP = (process.env.VIP_CODES || '').split(',').map((s) => s.trim()).filter(Boolean);
+function codeLevel(code) { // 0 = sai, 1 = VIP, 2 = admin
+  code = String(code || '').trim().slice(0, 60);
+  if (!code) return 0;
+  if (safeEq(code, ADMIN_KEY)) return 2;
+  if (ENV_VIP.some((c) => safeEq(code, c))) return 1;
+  for (const c of Object.keys(store.codes)) if (safeEq(code, c)) return 1;
+  return 0;
+}
+const listCodes = () => Object.entries(store.codes).map(([code, v]) => ({ code, label: v.label, created: v.created }));
+const pwHash = (pw, salt) => crypto.scryptSync(String(pw), salt, 32).toString('hex');
+function pwOk(meta, pw, uid) {
+  if (!meta || !meta.pw) return true;
+  if (uid && meta.owner && meta.owner === uid) return true;
+  try { return safeEq(pwHash(pw || '', meta.pw.salt), meta.pw.hash); } catch (e) { return false; }
+}
+const THEME_SLOTS = ['floor', 'wallL', 'wallR', 'wallBack', 'ceiling', 'flagL', 'flagR', 'title'];
+const IMG_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 
 // rooms: name -> { players: Map, video: {id,time,playing,ts} }
 const rooms = new Map();
@@ -204,6 +260,10 @@ io.on('connection', (socket) => {
     const { room: r, name, look } = data;
     const cid = clean(data.cid, 40);
     roomName = clean(r, 30).replace(/[^\w-]/g, '').toLowerCase() || 'main';
+    const meta0 = store.rooms[roomName];
+    if (!pwOk(meta0, data.password, clean(data.uid, 40))) return socket.emit('join-denied', { reason: 'pw' });
+    if (!rooms.has(roomName) && !meta0) { store.rooms[roomName] = { pw: null, owner: clean(data.uid, 40) || null, theme: {} }; saveStore(); }
+    socket.data.uid = clean(data.uid, 40);
     room = getRoom(roomName);
     // cùng 1 tab vào lại -> xoá nhân vật cũ
     if (cid) {
@@ -235,7 +295,8 @@ io.on('connection', (socket) => {
       x: (Math.random() - 0.5) * 6, z: 6, ry: 0,
     };
     room.players.set(socket.id, p);
-    socket.emit('init', { id: socket.id, players: [...room.players.values()], video: currentVideo(room.video), tables: room.tables, chat: room.chat, pool: { balls: poolPublic(room.pool), moving: room.pool.moving }, pp: ppPublic(room), clawState: room.claw.state, poolSeats: poolSeatsPublic(room), arcCounts: arcCounts(room) });
+    socket.emit('init', { id: socket.id, players: [...room.players.values()], video: currentVideo(room.video), tables: room.tables, chat: room.chat, pool: { balls: poolPublic(room.pool), moving: room.pool.moving }, pp: ppPublic(room), clawState: room.claw.state, poolSeats: poolSeatsPublic(room), arcCounts: arcCounts(room),
+      theme: (store.rooms[roomName] || {}).theme || {}, locked: !!(store.rooms[roomName] && store.rooms[roomName].pw), isOwner: !!(store.rooms[roomName] && store.rooms[roomName].owner && store.rooms[roomName].owner === socket.data.uid) });
     socket.to(roomName).emit('player-join', p);
     io.to(roomName).emit('count', room.players.size);
   });
@@ -299,6 +360,57 @@ io.on('connection', (socket) => {
     io.to(roomName).emit('pp', ppPublic(room));
     if (!pp.running) setTimeout(() => { if (ppHumans(room).length && !pp.running) ppServe(roomName, room, opp(slot)); }, 1200);
   });
+  /* ----- VIP / admin / giao diện phòng / mật khẩu phòng ----- */
+  const tries = [];
+  socket.on('vip-login', ({ code } = {}) => {
+    const now = Date.now();
+    while (tries.length && now - tries[0] > 60000) tries.shift();
+    if (tries.length >= 8) return socket.emit('vip-status', { vip: false, error: 'Thử quá nhiều lần, đợi 1 phút rồi thử lại' });
+    tries.push(now);
+    const lv = codeLevel(code);
+    socket.vip = lv >= 1; socket.admin = lv === 2; socket.vipCode = lv ? String(code).trim() : null;
+    socket.emit('vip-status', { vip: socket.vip, admin: socket.admin, error: lv ? null : 'Mã không đúng' });
+    if (socket.admin) socket.emit('vip-codes', listCodes());
+  });
+  socket.on('vip-gen', ({ label } = {}) => {
+    if (!socket.admin) return;
+    const al = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', r = (n) => Array.from(crypto.randomBytes(n), (b) => al[b % al.length]).join('');
+    const code = `VIP-${r(4)}-${r(4)}`;
+    store.codes[code] = { label: clean(label, 30), created: Date.now() };
+    saveStore(); socket.emit('vip-codes', listCodes());
+  });
+  socket.on('vip-revoke', ({ code } = {}) => {
+    if (!socket.admin || !store.codes[code]) return;
+    delete store.codes[code]; saveStore();
+    for (const s of io.sockets.sockets.values()) if (s.vipCode === code && !s.admin) { s.vip = false; s.emit('vip-status', { vip: false, admin: false, error: 'Mã VIP của bạn đã bị thu hồi' }); }
+    socket.emit('vip-codes', listCodes());
+  });
+  socket.on('theme-set', ({ slot, data } = {}) => {
+    if (!room || !socket.vip || !THEME_SLOTS.includes(slot)) return;
+    if (data !== null && !(typeof data === 'string' && data.length <= 450000 && IMG_RE.test(data))) return;
+    const meta = store.rooms[roomName] || (store.rooms[roomName] = { pw: null, owner: null, theme: {} });
+    meta.theme = meta.theme || {};
+    if (data) meta.theme[slot] = data; else delete meta.theme[slot];
+    saveStore();
+    io.to(roomName).emit('theme', { slot, data: data || null });
+  });
+  socket.on('theme-reset-all', () => {
+    if (!room || !socket.vip) return;
+    const meta = store.rooms[roomName]; if (!meta) return;
+    meta.theme = {}; saveStore();
+    for (const s of THEME_SLOTS) io.to(roomName).emit('theme', { slot: s, data: null });
+  });
+  socket.on('room-pw-set', ({ pw } = {}) => {
+    if (!room) return;
+    const meta = store.rooms[roomName] || (store.rooms[roomName] = { pw: null, owner: null, theme: {} });
+    if (!(socket.vip || (meta.owner && meta.owner === socket.data.uid))) return socket.emit('pool-event', { text: 'Chỉ chủ phòng hoặc VIP mới đặt được mật khẩu' });
+    pw = String(pw || '').slice(0, 40);
+    if (!pw) meta.pw = null; else { const salt = crypto.randomBytes(8).toString('hex'); meta.pw = { salt, hash: pwHash(pw, salt) }; }
+    saveStore();
+    io.to(roomName).emit('room-info', { locked: !!meta.pw });
+    io.to(roomName).emit('pool-event', { text: meta.pw ? '🔒 Phòng đã được đặt mật khẩu' : '🔓 Phòng đã bỏ mật khẩu' });
+  });
+
   socket.on('pool-sit', () => {
     if (!room) return;
     const s = room.poolSeats;

@@ -91,3 +91,23 @@ body.fs #scene { pointer-events: none; }
   border-radius: 14px; padding: 8px 14px; display: flex; gap: 10px; align-items: center; font-size: 14px; max-width: 94vw; flex-wrap: wrap; justify-content: center; }
 #powerWrap { width: 140px; height: 12px; background: #333; border-radius: 6px; overflow: hidden; }
 #powerBar { height: 100%; width: 0; background: linear-gradient(90deg, #4cd964, #ffcc00, #ff3b30); }
+
+.err { color: #ff6b6b; font-size: 13px; min-height: 0; }
+.muted { color: #99a; font-size: 12px; }
+#roomList button { font-size: 12px; padding: 5px 9px; }
+#vipModal { position: fixed; inset: 0; z-index: 55; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; }
+.vip-card { background: #1a1428; border: 2px solid #c9a227; border-radius: 16px; padding: 16px; width: min(560px, 94vw); max-height: 92vh; overflow-y: auto; }
+.vip-card h2 { margin: 0 0 10px; color: #f1d27a; text-align: center; }
+.vip-card h3 { margin: 0; }
+.vip-sec { background: rgba(255,255,255,.05); border-radius: 10px; padding: 10px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
+.vip-row { display: flex; gap: 8px; }
+.vip-row input { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid #555; background: #0f0f1a; color: #fff; }
+.vip-foot { text-align: center; }
+#themeSlots { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tslot { display: flex; gap: 8px; align-items: center; background: rgba(0,0,0,.3); border-radius: 8px; padding: 6px; font-size: 13px; }
+.tslot .th { width: 44px; height: 44px; border-radius: 6px; background: #222 center/cover no-repeat; flex: none; border: 1px solid #555; }
+.tslot .nm { flex: 1; }
+.tslot button { padding: 4px 8px; font-size: 12px; }
+.vcode { display: flex; gap: 8px; align-items: center; background: rgba(0,0,0,.3); border-radius: 8px; padding: 6px 8px; font-size: 13px; }
+.vcode code { color: #ffd166; font-size: 14px; letter-spacing: 1px; }
+.vcode span { flex: 1; color: #aab; }
