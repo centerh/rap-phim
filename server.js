@@ -81,10 +81,10 @@ function isBanned(name, uid) {
 const THEME_SLOTS = ['floor', 'wallL', 'wallR', 'wallBack', 'ceiling', 'flagL', 'flagR', 'title'];
 const IMG_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 
-// rooms: name -> { players: Map, video: {id,time,playing,ts} }
+// rooms: name -> { players: Map, video: {id,time,playing,ts,ownerUid,by} }
 const rooms = new Map();
 function getRoom(name) {
-  if (!rooms.has(name)) rooms.set(name, { players: new Map(), chat: [], seats: new Map(), tables: {}, claw: { by: null, state: null }, poolSeats: { A: null, B: null, turn: 'A' }, arc: {}, pool: newPool(), hk: newHockey(), video: { id: 'dQw4w9WgXcQ', time: 0, playing: false, ts: Date.now() } });
+  if (!rooms.has(name)) rooms.set(name, { players: new Map(), chat: [], seats: new Map(), tables: {}, claw: { by: null, state: null }, poolSeats: { A: null, B: null, turn: 'A' }, arc: {}, pool: newPool(), hk: newHockey(), video: { id: 'dQw4w9WgXcQ', time: 0, playing: false, ts: Date.now(), ownerUid: null, by: '' } });
   return rooms.get(name);
 }
 const BASE_FACES = ['happy', 'normal', 'surprised', 'sad', 'angry', 'wink', 'laugh'];
@@ -95,8 +95,8 @@ function freeSeats(room, id) {
   for (const [s, o] of room.seats) if (o === id) room.seats.delete(s);
 }
 function currentVideo(v) {
-  const time = v.playing ? v.time + (Date.now() - v.ts) / 1000 : v.time;
-  return { id: v.id, time, playing: v.playing };
+  const time = v.id && v.playing ? v.time + (Date.now() - v.ts) / 1000 : (v.time || 0);
+  return { id: v.id || '', time, playing: !!(v.id && v.playing), ownerUid: v.ownerUid || null, by: v.by || '' };
 }
 const clean = (s, n) => String(s || '').slice(0, n);
 
@@ -727,13 +727,35 @@ io.on('connection', (socket) => {
   socket.on('video-set', (id) => {
     if (!room) return;
     if (!videoAllowed()) return denyVideo();
-    room.video = { id: clean(id, 20), time: 0, playing: true, ts: Date.now() };
-    io.to(roomName).emit('video', { ...currentVideo(room.video), by: room.players.get(socket.id)?.name, load: true });
+    const cleanId = clean(id, 20).trim();
+    const pName = room.players.get(socket.id)?.name || 'Ai đó';
+    const myKey = socket.data.uid || socket.id;
+    if (!cleanId) {
+      if (!room.video.id) return;
+      room.video = { id: '', time: 0, playing: false, ts: Date.now(), ownerUid: null, by: '' };
+      io.to(roomName).emit('video', { ...currentVideo(room.video), load: true });
+      io.to(roomName).emit('pool-event', { text: `⏹️ ${pName} đã xoá link — dừng video` });
+      return;
+    }
+    if (cleanId === room.video.id && room.video.ownerUid && room.video.ownerUid !== myKey) {
+      socket.emit('pool-event', { text: `🎬 Video này đang phát bởi ${room.video.by || 'người thêm video'} — muốn dừng hãy xoá link hoặc dán link video khác` });
+      socket.emit('video', { ...currentVideo(room.video), load: false });
+      return;
+    }
+    room.video = { id: cleanId, time: 0, playing: true, ts: Date.now(), ownerUid: myKey, by: pName };
+    io.to(roomName).emit('video', { ...currentVideo(room.video), load: true });
+    io.to(roomName).emit('pool-event', { text: `🎬 ${pName} đã bật video mới` });
   });
 
-  socket.on('video-state', ({ playing, time }) => {
+  socket.on('video-state', ({ playing, time } = {}) => {
     if (!room) return;
     if (!videoAllowed()) return denyVideo();
+    const myKey = socket.data.uid || socket.id;
+    if (!room.video.id || !room.video.ownerUid || room.video.ownerUid !== myKey) {
+      socket.emit('video', { ...currentVideo(room.video), load: false });
+      if (room.video.id) socket.emit('pool-event', { text: `🎬 Chỉ ${room.video.by || 'người thêm video'} mới tạm dừng được — muốn dừng hãy xoá link hoặc thêm video khác` });
+      return;
+    }
     room.video.playing = !!playing;
     room.video.time = +time || 0;
     room.video.ts = Date.now();

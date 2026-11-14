@@ -147,3 +147,14 @@ body.fs #scene { pointer-events: none; }
 .invite-box { border-color: #ffd34d; background: rgba(90,65,10,.28); }
 #roomList button.quick { border-color: rgba(76,217,100,.4); }
 #roomList button.quick:hover { border-color: #4cd964; background: #29463a; }
+#cssLayer, #ytHolder, #ytHolder iframe { pointer-events: none !important; }
+#ytHolder.stopped iframe, #ytHolder.stopped #yt { visibility: hidden; }
+#ytClear { background: rgba(229,9,20,.32); border: 1px solid rgba(255,107,107,.5); padding: 6px 9px; font-size: 13px; }
+#ytClear:hover { background: rgba(229,9,20,.6); }
+button:disabled { opacity: .38; cursor: not-allowed; }
+body.fs #chat { z-index: 38; }
+body.fs .msg { background: rgba(0,0,0,.62); opacity: .9; }
+body.fs #chatInput { opacity: .65; background: rgba(0,0,0,.5); }
+body.fs #chatInput:focus { opacity: .98; background: rgba(0,0,0,.82); }
+body.fs #screenPanel { opacity: .24; transition: opacity .2s; }
+body.fs #screenPanel:hover, body.fs #screenPanel:focus-within { opacity: 1; }

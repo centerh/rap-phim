@@ -1203,7 +1203,7 @@ socket.on('init', ({ id, players: list, video, tables, chat, pool, hk, clawState
   for (const p of list) addPlayer(p);
   const mine = players.get(id);
   me = { x: mine.target.x, z: mine.target.z, ry: 0 };
-  pendingVideo = video; applyPending();
+  receiveVideo(video);
   for (const [tid, items] of Object.entries(tables || {})) renderTable(tid, items);
 });
 socket.on('player-join', (p) => { addPlayer(p); addChat('', `${p.name} vừa vào rạp`, true); });
@@ -1275,7 +1275,7 @@ addEventListener('pointerdown', (e) => {
 addEventListener('keydown', (e) => { if (e.key === 'Escape' && playerPopupOpen) togglePlayerPopup(false); });
 addEventListener('resize', positionPlayerPopup);
 socket.on('chat', ({ id, name, text, ts, vip }) => { addChat(name, text, false, false, ts, vip); showBubble(id, text); });
-socket.on('video', (v) => { pendingVideo = v; applyPending(); });
+socket.on('video', receiveVideo);
 
 /* ---------------- Chat (mờ, góc dưới trái) ---------------- */
 const chatHistory = [];
@@ -1326,12 +1326,34 @@ chatInput.addEventListener('keydown', (e) => {
 
 /* ---------------- YouTube sync ---------------- */
 let player = null, playerReady = false, pendingVideo = null, applying = false, currentId = null;
+let activeVideoId = '', activePlaying = false, videoOwnerUid = null, videoOwnerName = '';
+const isVideoOwner = () => !!(activeVideoId && videoOwnerUid && videoOwnerUid === myUid);
 
 function parseYT(s) {
   s = s.trim();
   if (/^[\w-]{11}$/.test(s)) return s;
   const m = s.match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([\w-]{11})/);
   return m ? m[1] : null;
+}
+function updateYtGoLabel() {
+  const empty = !$('ytUrl').value.trim();
+  $('ytGo').textContent = (activeVideoId && empty) ? '⏹ Dừng' : 'Phát';
+}
+function receiveVideo(v) {
+  if (!v) return;
+  activeVideoId = v.id || '';
+  activePlaying = !!(v.id && v.playing);
+  videoOwnerUid = v.ownerUid || null;
+  videoOwnerName = v.by || '';
+  $('ytHolder').classList.toggle('stopped', !activeVideoId);
+  const urlInput = $('ytUrl');
+  if (document.activeElement !== urlInput) {
+    urlInput.value = activeVideoId ? `https://youtu.be/${activeVideoId}` : '';
+  }
+  updateYtGoLabel();
+  applyVideoLockUi();
+  pendingVideo = v;
+  applyPending();
 }
 function initPlayer() {
   player = new YT.Player('yt', {
@@ -1340,9 +1362,10 @@ function initPlayer() {
     events: {
       onReady: () => { playerReady = true; applyPending(); },
       onStateChange: (e) => {
-        if (applying) return;
+        if (applying || !isVideoOwner() || !activeVideoId) return;
         if (e.data === YT.PlayerState.PLAYING || e.data === YT.PlayerState.PAUSED) {
-          socket.emit('video-state', { playing: e.data === YT.PlayerState.PLAYING, time: player.getCurrentTime() });
+          activePlaying = e.data === YT.PlayerState.PLAYING;
+          socket.emit('video-state', { playing: activePlaying, time: player.getCurrentTime() });
         }
       },
     },
@@ -1352,12 +1375,18 @@ function applyPending() {
   if (!pendingVideo || !playerReady) return;
   const v = pendingVideo; pendingVideo = null;
   applying = true;
+  if (!v.id) {
+    currentId = '';
+    try { player.stopVideo(); } catch (e) {}
+    setTimeout(() => { applying = false; }, 600);
+    return;
+  }
   if (v.id !== currentId) {
     currentId = v.id;
-    player.loadVideoById(v.id, v.time);
-    if (!v.playing) setTimeout(() => player.pauseVideo(), 800);
+    player.loadVideoById(v.id, v.time || 0);
+    if (!v.playing) setTimeout(() => { try { player.pauseVideo(); } catch (e) {} }, 800);
   } else {
-    if (Math.abs(player.getCurrentTime() - v.time) > 1.5) player.seekTo(v.time, true);
+    if (Math.abs(player.getCurrentTime() - (v.time || 0)) > 1.5) player.seekTo(v.time || 0, true);
     v.playing ? player.playVideo() : player.pauseVideo();
   }
   setTimeout(() => { applying = false; }, 1500);
@@ -1366,22 +1395,55 @@ function startYT() {
   if (window.YT && YT.Player) initPlayer();
   else window.onYouTubeIframeAPIReady = initPlayer;
 }
-$('ytGo').onclick = () => {
-  const id = parseYT($('ytUrl').value);
-  if (!id) return alert('Link YouTube không hợp lệ');
-  socket.emit('video-set', id); $('ytUrl').value = '';
+$('ytUrl').addEventListener('input', updateYtGoLabel);
+$('ytClear').onclick = () => {
+  $('ytUrl').value = '';
+  updateYtGoLabel();
+  if (activeVideoId) socket.emit('video-set', '');
 };
-$('ytUrl').addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') $('ytGo').click(); });
+$('ytGo').onclick = () => {
+  const raw = $('ytUrl').value.trim();
+  if (!raw) {
+    if (activeVideoId) socket.emit('video-set', '');
+    $('ytUrl').blur();
+    return;
+  }
+  const id = parseYT(raw);
+  if (!id) return alert('Link YouTube không hợp lệ');
+  if (id === activeVideoId && videoOwnerUid && videoOwnerUid !== myUid) {
+    addChat('', `🎬 Video này đang phát bởi ${videoOwnerName || 'người thêm video'} — muốn dừng hãy bấm ✖ xoá link hoặc dán link video khác nhé`, true);
+    $('ytUrl').blur();
+    return;
+  }
+  $('ytUrl').value = `https://youtu.be/${id}`;
+  $('ytUrl').blur();
+  updateYtGoLabel();
+  socket.emit('video-set', id);
+};
+$('ytUrl').addEventListener('keydown', (e) => {
+  e.stopPropagation();
+  if (e.key === 'Enter') { e.preventDefault(); $('ytGo').click(); }
+  else if (e.key === 'Escape') { $('ytUrl').value = activeVideoId ? `https://youtu.be/${activeVideoId}` : ''; updateYtGoLabel(); $('ytUrl').blur(); }
+});
 $('sizeBtn').onclick = () => setFS(!fsMode);
 $('playBtn').onclick = () => {
-  if (!playerReady) return;
-  player.getPlayerState() === YT.PlayerState.PLAYING ? player.pauseVideo() : player.playVideo();
+  if (!isVideoOwner()) return;
+  if (playerReady) {
+    player.getPlayerState() === YT.PlayerState.PLAYING ? player.pauseVideo() : player.playVideo();
+  } else {
+    activePlaying = !activePlaying;
+    socket.emit('video-state', { playing: activePlaying, time: 0 });
+  }
 };
 let fsMode = false;
 function setFS(on) {
   fsMode = on;
   document.body.classList.toggle('fs', on);
-  $('ytHolder').style.pointerEvents = on ? 'auto' : 'none';
+  $('ytHolder').style.pointerEvents = 'none';
+  if (document.activeElement && document.activeElement !== chatInput && document.activeElement.tagName !== 'INPUT') {
+    document.activeElement.blur?.();
+  }
+  window.focus();
   if (on) { document.documentElement.requestFullscreen?.().catch(() => {}); }
   else if (document.fullscreenElement) document.exitFullscreen?.();
 }
@@ -1391,7 +1453,11 @@ addEventListener('keydown', (e) => { if (e.key === 'Escape' && fsMode && !chatti
 /* ---------------- Input ---------------- */
 addEventListener('keydown', (e) => {
   if (inLobby) return;
-  if (e.key === 'Enter') { e.preventDefault(); chatInput.focus(); return; }
+  if (e.key === 'Enter' && !menuOpen && document.activeElement?.tagName !== 'INPUT') {
+    e.preventDefault();
+    chatInput.focus();
+    return;
+  }
   if (chatting) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   keys[keyName(e)] = true;
@@ -2231,8 +2297,20 @@ function renderEmoteBar() {
 }
 function applyVideoLockUi() {
   const lock = videoLock && !isVip;
-  for (const id of ['ytUrl', 'ytGo', 'playBtn']) $(id).disabled = lock;
-  $('ytUrl').placeholder = lock ? '🔒 Video đang được khoá bởi VIP' : 'Dán link YouTube rồi bấm Phát...';
+  $('ytUrl').disabled = lock;
+  $('ytGo').disabled = lock;
+  $('ytClear').disabled = lock;
+  $('ytClear').classList.toggle('hidden', !activeVideoId || lock);
+  const canPause = !lock && isVideoOwner();
+  $('playBtn').disabled = !canPause;
+  $('playBtn').title = lock
+    ? '🔒 Video đang được khoá bởi VIP'
+    : !activeVideoId
+      ? 'Chưa có video đang phát'
+      : isVideoOwner()
+        ? 'Phát / Tạm dừng (bạn là người thêm link video này)'
+        : `Chỉ ${videoOwnerName || 'người thêm link video'} mới tạm dừng được — bấm ✖ xoá link hoặc dán video khác để dừng`;
+  $('ytUrl').placeholder = lock ? '🔒 Video đang được khoá bởi VIP' : 'Dán link YouTube rồi bấm Phát (xoá trống để dừng)...';
 }
 function afterVipChange() {
   $('vipBar').classList.toggle('hidden', !isVip);
