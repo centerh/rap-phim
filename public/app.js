@@ -838,11 +838,12 @@ function buildRoom() {
 }
 buildRoom();
 
-/* ================= Khu trò chơi phía sau: bi-a, bóng bàn, sàn nhảy Audition ================= */
+/* ================= Khu trò chơi phía sau: bi-a, bàn hockey, sàn nhảy Audition ================= */
 const POOL_C = { x: -9.5, z: 15.2 }, PP_C = { x: 9.5, z: 15.2 }, DANCE_C = { x: 0, z: 15.2 };
 const PL = 3.0, PW = 1.5, BR = 0.065, SURF = 0.92;
+const HL = 3.0, HW = 1.6, HG = 0.30, HSURF = 0.88, HK_PR = 0.085, HK_MR = 0.13;
 const BALL_COLORS = [0xffffff, 0xf4d03f, 0x2e6bd6, 0xd62e2e, 0x7d3cc4, 0xf08a24, 0x1f9d55, 0x8b1a1a, 0x111111, 0xf4d03f, 0x2e6bd6];
-const game = { poolBalls: [], poolPos: [], poolMoving: false, tiles: [], ppBall: null, ppFlight: null, board: null, cue: null, aimLine: null, mirror: null };
+const game = { poolBalls: [], poolPos: [], poolMoving: false, tiles: [], hkPuck: null, hkPadA: null, hkPadB: null, hkState: [0, 0, -1.1, 0, 1.1, 0], hkCur: [0, 0, -1.1, 0, 1.1, 0], board: null, boardSprite: null, cue: null, aimLine: null, mirror: null };
 
 function ballTexture(i) {
   const col = '#' + BALL_COLORS[i].toString(16).padStart(6, '0');
@@ -868,7 +869,7 @@ function buildGameZone() {
   const signTex = bannerTexture(1024, 200, (ctx, w, h) => {
     ctx.textAlign = 'center'; ctx.font = '900 100px "Arial Black", sans-serif';
     ctx.shadowColor = '#ff4df0'; ctx.shadowBlur = 30; ctx.fillStyle = '#ffe3fc';
-    ctx.fillText('🎱 KHU TRÒ CHƠI 🏓', 512, 130);
+    ctx.fillText('🎱 KHU TRÒ CHƠI 🏒', 512, 130);
   });
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(12, 12 * 200 / 1024), new THREE.MeshBasicMaterial({ map: signTex, transparent: true, fog: false }));
   sign.rotation.y = Math.PI; sign.position.set(0, 8.5, 17.9); scene.add(sign);
@@ -906,23 +907,77 @@ function buildGameZone() {
   const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(1, 0, 0)]);
   const al = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 })); al.visible = false; al.frustumCulled = false; scene.add(al); game.aimLine = al;
 
-  /* ---- Bàn bóng bàn ---- */
-  const pp = new THREE.Group(); pp.position.set(PP_C.x, 0, PP_C.z);
-  put(pp, new THREE.BoxGeometry(3.0, 0.07, 1.7), L(0x14508c), 0, 0.76, 0);
-  const ln = BM(0xffffff);
-  put(pp, new THREE.PlaneGeometry(3.0, 0.03), ln, 0, 0.797, 0).rotation.x = -Math.PI / 2;
-  for (const sz of [-1, 1]) put(pp, new THREE.PlaneGeometry(3.0, 0.03), ln, 0, 0.797, sz * 0.84).rotation.x = -Math.PI / 2;
-  for (const sx of [-1, 1]) put(pp, new THREE.PlaneGeometry(0.03, 1.7), ln, sx * 1.485, 0.797, 0).rotation.x = -Math.PI / 2;
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) put(pp, new THREE.BoxGeometry(0.1, 0.72, 0.1), L(0x222222), sx * 1.35, 0.36, sz * 0.7);
-  put(pp, new THREE.BoxGeometry(0.015, 0.17, 1.85), new THREE.MeshLambertMaterial({ color: 0xeeeeee, transparent: true, opacity: 0.55 }), 0, 0.885, 0);
-  for (const sz of [-1, 1]) put(pp, new THREE.CylinderGeometry(0.02, 0.02, 0.2, 8), L(0x333333), 0, 0.88, sz * 0.93);
-  pp.userData.gameId = 'pp'; scene.add(pp); clickables.push(pp);
-  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 10), BM(0xfff2c8)); ball.visible = false; scene.add(ball); game.ppBall = ball;
+  /* ---- Bàn Air Hockey ---- */
+  const hk = new THREE.Group(); hk.position.set(PP_C.x, 0, PP_C.z);
+  const bodyMat = L(0x1b2133), darkMat = L(0x101420);
+  put(hk, new THREE.BoxGeometry(3.34, 0.24, 1.94), bodyMat, 0, 0.74, 0);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) put(hk, new THREE.BoxGeometry(0.22, 0.64, 0.22), darkMat, sx * 1.42, 0.32, sz * 0.76);
+  // mặt sân băng Air Hockey có vạch kẻ & lỗ khí
+  const rinkTex = bannerTexture(1024, 546, (ctx, w, h) => {
+    ctx.fillStyle = '#edf6ff'; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(130,165,200,.22)';
+    for (let x = 24; x < w; x += 28) for (let y = 24; y < h; y += 28) { ctx.beginPath(); ctx.arc(x, y, 2.2, 0, 7); ctx.fill(); }
+    // vùng cung khung thành 2 bên
+    ctx.lineWidth = 8;
+    ctx.fillStyle = 'rgba(37,99,235,.14)'; ctx.strokeStyle = '#2563eb';
+    ctx.beginPath(); ctx.arc(0, h / 2, 118, -Math.PI / 2, Math.PI / 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = 'rgba(225,29,72,.14)'; ctx.strokeStyle = '#e11d48';
+    ctx.beginPath(); ctx.arc(w, h / 2, 118, Math.PI / 2, Math.PI * 1.5); ctx.fill(); ctx.stroke();
+    // hai vạch xanh + vạch đỏ giữa sân + vòng tròn giao đĩa
+    ctx.strokeStyle = 'rgba(37,99,235,.55)'; ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.moveTo(w * 0.32, 0); ctx.lineTo(w * 0.32, h); ctx.moveTo(w * 0.68, 0); ctx.lineTo(w * 0.68, h); ctx.stroke();
+    ctx.strokeStyle = '#e11d48'; ctx.lineWidth = 10;
+    ctx.beginPath(); ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, h); ctx.stroke();
+    ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(w / 2, h / 2, 92, 0, 7); ctx.stroke();
+    ctx.fillStyle = '#e11d48'; ctx.beginPath(); ctx.arc(w / 2, h / 2, 12, 0, 7); ctx.fill();
+  });
+  const rink = put(hk, new THREE.PlaneGeometry(HL, HW), new THREE.MeshLambertMaterial({ map: rinkTex }), 0, HSURF, 0);
+  rink.rotation.x = -Math.PI / 2;
+  // thành bàn 4 bên + khe khung thành 2 đầu + viền đèn neon
+  const railMat = L(0x28324b), postSide = (HW / 2 - HG) / 2, postCenter = HG + postSide;
+  for (const sz of [-1, 1]) {
+    put(hk, new THREE.BoxGeometry(HL + 0.34, 0.11, 0.17), railMat, 0, HSURF + 0.04, sz * (HW / 2 + 0.085));
+    put(hk, new THREE.BoxGeometry(HL + 0.04, 0.025, 0.03), BM(sz < 0 ? 0x4de1ff : 0xff4d8d), 0, HSURF + 0.098, sz * (HW / 2 + 0.015));
+  }
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      put(hk, new THREE.BoxGeometry(0.17, 0.11, postSide * 2), railMat, sx * (HL / 2 + 0.085), HSURF + 0.04, sz * postCenter);
+    }
+    // hốc khung thành phát sáng xanh (A) / đỏ (B)
+    const gc = sx < 0 ? 0x3b82f6 : 0xf43f5e;
+    put(hk, new THREE.BoxGeometry(0.15, 0.03, HG * 2), BM(0x090b12), sx * (HL / 2 + 0.075), HSURF + 0.002, 0);
+    put(hk, new THREE.BoxGeometry(0.05, 0.13, HG * 2 + 0.08), BM(gc), sx * (HL / 2 + 0.16), HSURF + 0.05, 0);
+  }
+  hk.userData.gameId = 'hockey'; scene.add(hk); clickables.push(hk);
+  const pl2 = new THREE.PointLight(0xd8f3ff, 22, 10); pl2.position.set(PP_C.x, 2.3, PP_C.z); scene.add(pl2);
+
+  // đĩa hockey (puck) + 2 tay cầm đẩy (mallets)
+  const puckG = new THREE.Group();
+  const pkBase = new THREE.Mesh(new THREE.CylinderGeometry(HK_PR, HK_PR, 0.034, 24), new THREE.MeshPhongMaterial({ color: 0xff2a55, shininess: 90 }));
+  const pkRing = new THREE.Mesh(new THREE.RingGeometry(HK_PR * 0.42, HK_PR * 0.72, 24), BM(0xffffff));
+  pkRing.rotation.x = -Math.PI / 2; pkRing.position.y = 0.018;
+  puckG.add(pkBase, pkRing); puckG.position.set(PP_C.x, HSURF + 0.018, PP_C.z); scene.add(puckG); game.hkPuck = puckG;
+
+  function makeMallet(col, rim) {
+    const g = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(HK_MR, HK_MR * 1.04, 0.05, 28), new THREE.MeshPhongMaterial({ color: col, shininess: 85 }));
+    base.position.y = 0.025;
+    const ring = new THREE.Mesh(new THREE.RingGeometry(HK_MR * 0.72, HK_MR * 0.94, 28), BM(rim));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.052;
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(HK_MR * 0.34, HK_MR * 0.42, 0.09, 20), new THREE.MeshPhongMaterial({ color: col, shininess: 90 }));
+    stem.position.y = 0.085;
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(HK_MR * 0.38, 20, 14), new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 100 }));
+    knob.scale.y = 0.65; knob.position.y = 0.13;
+    g.add(base, ring, stem, knob); scene.add(g); return g;
+  }
+  game.hkPadA = makeMallet(0x2563eb, 0x67e8f9); game.hkPadA.position.set(PP_C.x - 1.1, HSURF, PP_C.z);
+  game.hkPadB = makeMallet(0xe11d48, 0xfde047); game.hkPadB.position.set(PP_C.x + 1.1, HSURF, PP_C.z);
+
   const c = document.createElement('canvas'); c.width = 512; c.height = 160;
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
   const board = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-  board.scale.set(2.6, 0.81, 1); board.position.set(PP_C.x, 2.0, PP_C.z); board.renderOrder = 10; scene.add(board);
-  game.board = { c, tex };
+  board.scale.set(2.6, 0.81, 1); board.position.set(PP_C.x, 2.1, PP_C.z); board.renderOrder = 10; scene.add(board);
+  game.board = { c, tex }; game.boardSprite = board;
   drawBoard(null, null, [0, 0]);
 
   /* ---- Sàn nhảy Audition ---- */
@@ -953,8 +1008,10 @@ function drawBoard(nameA, nameB, score) {
   x.fillStyle = 'rgba(0,0,0,.65)'; x.beginPath(); x.roundRect(0, 0, 512, 160, 24); x.fill();
   x.textAlign = 'center'; x.fillStyle = '#fff'; x.font = '900 40px "Arial Black", sans-serif';
   x.fillText(`${score[0]}  :  ${score[1]}`, 256, 70);
-  x.font = '700 26px sans-serif'; x.fillStyle = '#ffd166';
-  x.fillText(`🏓 ${nameA || '🤖 Máy'}`, 120, 130); x.fillText(`${nameB || '🤖 Máy'} 🏓`, 392, 130);
+  x.font = '700 26px sans-serif'; x.fillStyle = '#67e8f9';
+  x.fillText(`🏒 ${nameA || '🤖 Máy'}`, 124, 130);
+  x.fillStyle = '#fda4af';
+  x.fillText(`${nameB || '🤖 Máy'} 🏒`, 388, 130);
   tex.needsUpdate = true;
 }
 buildGameZone();
@@ -1128,7 +1185,7 @@ function showBubble(id, text) {  const p = players.get(id);
 }
 
 /* ---------------- Networking ---------------- */
-socket.on('init', ({ id, players: list, video, tables, chat, pool, pp, clawState, poolSeats: ps, arcCounts, theme, locked, invite, isOwner: own, videoLock: vlock }) => {
+socket.on('init', ({ id, players: list, video, tables, chat, pool, hk, clawState, poolSeats: ps, arcCounts, theme, locked, invite, isOwner: own, videoLock: vlock }) => {
   roomLocked = !!locked; isOwner = !!own; videoLock = !!vlock; roomInvite = invite || '';
   if (roomInvite) { try { sessionStorage.setItem('cinema-inv-' + currentRoom, roomInvite); } catch (e) {} }
   try { history.replaceState(null, '', location.pathname + '?room=' + encodeURIComponent(currentRoom)); } catch (e) {}
@@ -1140,7 +1197,7 @@ socket.on('init', ({ id, players: list, video, tables, chat, pool, pp, clawState
   if (arcCounts) Arcade.setCounts(arcCounts);
   if (clawState && game.claw) { Object.assign(game.claw.s, clawState); game.claw.t = Object.assign({}, clawState); game.claw.prevHold = clawState.hold; }
   if (pool) applyPool(pool);
-  if (pp) { ppNames = { A: pp.A, B: pp.B }; ppIds = pp.ids || {}; ppScore = pp.score; drawBoard(pp.A, pp.B, pp.score); }
+  if (hk) { hkNames = { A: hk.A, B: hk.B }; hkIds = hk.ids || {}; hkScore = hk.score; if (hk.state) { game.hkState = hk.state.slice(); game.hkCur = hk.state.slice(); } drawBoard(hk.A, hk.B, hk.score); }
   for (const m of chat || []) addChat(m.name, m.text, false, true, m.ts, m.vip);
   myId = id;
   for (const p of list) addPlayer(p);
@@ -1358,7 +1415,7 @@ let dragging = false, lx = 0, ly = 0;
 canvas.addEventListener('pointerdown', (e) => { dragging = true; lx = e.clientX; ly = e.clientY; canvas.setPointerCapture(e.pointerId); });
 canvas.addEventListener('pointerup', () => { dragging = false; });
 canvas.addEventListener('pointermove', (e) => {
-  if (!dragging || poolMode) return;
+  if (!dragging || poolMode || hockeyMode) return;
   if (fpMode) {
     camYaw += (e.clientX - lx) * 0.005;
     fpPitch = Math.min(1.2, Math.max(-1.2, fpPitch + (e.clientY - ly) * 0.004));
@@ -1600,7 +1657,7 @@ socket.on('attack', ({ from, to, type }) => {
 let downX = 0, downY = 0;
 canvas.addEventListener('pointerdown', (e) => { downX = e.clientX; downY = e.clientY; });
 canvas.addEventListener('pointerup', (e) => {
-  if (fsMode || menuOpen || poolMode || gameMode === 'pp' || Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return;
+  if (fsMode || menuOpen || poolMode || hockeyMode || Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return;
   const u = pick(e);
   closeActionMenu();
   if (!u || !me) return;
@@ -1616,7 +1673,7 @@ canvas.addEventListener('pointerup', (e) => {
   }
 });
 canvas.addEventListener('pointermove', (e) => {
-  if (dragging || fsMode || menuOpen || inLobby || poolMode) return;
+  if (dragging || fsMode || menuOpen || inLobby || poolMode || hockeyMode) return;
   canvas.style.cursor = pick(e) ? 'pointer' : 'default';
 });
 
@@ -1710,8 +1767,8 @@ addEventListener('keydown', (e) => {
 });
 socket.on('face', ({ id, face }) => { const p = players.get(id); if (p) p.group.userData.setFace(face); });
 
-/* ---------------- Trò chơi: bi-a / bóng bàn / nhảy Audition ---------------- */
-let gameMode = null, poolMode = false, ppSide = null, ppIds = {}, ppNames = {}, ppScore = [0, 0];
+/* ---------------- Trò chơi: bi-a / bàn hockey / nhảy Audition ---------------- */
+let gameMode = null, poolMode = false, hockeyMode = false, hkSide = null, hkIds = {}, hkNames = {}, hkScore = [0, 0], hkTarget = { x: -1.1, z: 0 }, hkSendT = 0;
 const hud = $('gameHud');
 function setHud(html, extra) {
   $('hudText').innerHTML = html;
@@ -1720,10 +1777,15 @@ function setHud(html, extra) {
   $('hudSit').classList.toggle('hidden', extra !== 'pool');
   hud.classList.toggle('hidden', !html);
 }
-const ppEnd = (s) => ({ x: PP_C.x + (s === 'A' ? -2.2 : 2.2), z: PP_C.z });
+const hkEnd = (s) => ({ x: PP_C.x + (s === 'A' ? -2.15 : 2.15), z: PP_C.z });
+function hkClampLocal(side, x, z) {
+  const cz = clamp(z, -HW / 2 + HK_MR, HW / 2 - HK_MR);
+  const cx = side === 'A' ? clamp(x, -HL / 2 + HK_MR, -HK_MR) : clamp(x, HK_MR, HL / 2 - HK_MR);
+  return [cx, cz];
+}
 function leaveGames() {
   if (poolMode) { poolMode = false; game.cue.visible = false; game.aimLine.visible = false; charging = 0; socket.emit('pool-stand'); }
-  if (ppSide) { socket.emit('pp-leave'); ppSide = null; }
+  if (hockeyMode || hkSide) { hockeyMode = false; hkSide = null; socket.emit('hk-leave'); }
   if (me && me.dancing) { socket.emit('dance', false); me.dancing = false; }
   if (clawJoined) { socket.emit('claw-leave'); clawJoined = false; }
   if (Arcade.isOpen) Arcade.close();
@@ -1734,7 +1796,7 @@ function startGame(id, u) {
   leaveGames();
   if (me.sit) { socket.emit('stand', { x: me.x, z: me.z - 1.3 }); me.sit = null; me.z -= 1.3; }
   if (id === 'pool') me.walkTo = { x: POOL_C.x, z: POOL_C.z + 1.75, game: 'pool' };
-  else if (id === 'pp') { const s = me.x < PP_C.x ? 'A' : 'B'; const e = ppEnd(s); me.walkTo = { x: e.x, z: e.z, game: 'pp', side: s }; }
+  else if (id === 'hockey') { const s = me.x <= PP_C.x ? 'A' : 'B'; const e = hkEnd(s); me.walkTo = { x: e.x, z: e.z, game: 'hockey', side: s }; }
   else if (id === 'claw') me.walkTo = { x: CLAW_M.x + 1.8, z: CLAW_M.z, game: 'claw' };
   else if (id === 'arcade') me.walkTo = { x: 13.6, z: u ? u.mz : 14.5, game: 'arcade' };
   else me.walkTo = { x: DANCE_C.x + (Math.random() * 3 - 1.5), z: DANCE_C.z + (Math.random() * 3 - 1.5), game: 'dance' };
@@ -1743,10 +1805,12 @@ function enterGame(w) {
   if (w.game === 'pool') {
     gameMode = 'pool'; poolMode = true; me.ry = Math.PI;
     setHud('', 'pool'); refreshPoolHud(); socket.emit('pool-get');
-  } else if (w.game === 'pp') {
-    gameMode = 'pp'; ppSide = w.side; me.ry = w.side === 'A' ? Math.PI / 2 : -Math.PI / 2;
-    socket.emit('pp-join', { side: w.side }); refreshPpHud();
-  } else if (w.game === 'pp-pos') {
+  } else if (w.game === 'hockey') {
+    gameMode = 'hockey'; hockeyMode = true; hkSide = w.side;
+    hkTarget.x = w.side === 'A' ? -1.1 : 1.1; hkTarget.z = 0;
+    me.ry = w.side === 'A' ? Math.PI / 2 : -Math.PI / 2;
+    socket.emit('hk-join', { side: w.side }); refreshHkHud();
+  } else if (w.game === 'hockey-pos') {
     me.ry = w.side === 'A' ? Math.PI / 2 : -Math.PI / 2;
   } else if (w.game === 'claw') {
     gameMode = 'claw'; me.ry = -Math.PI / 2; clawJoined = true; startClawCtl(); socket.emit('claw-join');
@@ -1759,42 +1823,60 @@ function enterGame(w) {
     setHud('💃 <b>Audition</b>: bạn đang nhảy theo nhạc · bấm phím di chuyển hoặc Esc để dừng');
   }
 }
-function refreshPpHud() {
-  if (gameMode !== 'pp') return;
-  setHud(`🏓 <b>Bóng bàn</b> ${ppNames.A || '🤖 Máy'} ${ppScore[0]} : ${ppScore[1]} ${ppNames.B || '🤖 Máy'} · bóng tới gần thì bấm <b>Space</b> (hoặc click) để đỡ · Esc: thoát`);
+function refreshHkHud() {
+  if (gameMode !== 'hockey') return;
+  const sideBadge = hkSide === 'A' ? '<span style="color:#67e8f9">Bên trái (Xanh)</span>' : '<span style="color:#fda4af">Bên phải (Đỏ)</span>';
+  setHud(`🏒 <b>Hockey</b> (${sideBadge}) · <b>${hkNames.A || '🤖 Máy'} ${hkScore[0]} : ${hkScore[1]} ${hkNames.B || '🤖 Máy'}</b> · di chuột (hoặc WASD) đẩy đĩa vào gôn đối phương (7 điểm thắng) · Esc: thoát`);
 }
 $('hudExit').onclick = leaveGames;
 $('hudReset').onclick = () => socket.emit('pool-reset');
 addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && gameMode && !chatting) leaveGames();
-  if (e.code === 'Space' && gameMode === 'pp' && !chatting && !e.repeat) { e.preventDefault(); ppHit(); }
   if (e.code === 'Space' && gameMode === 'claw' && !chatting && !e.repeat) { e.preventDefault(); clawDrop(); }
 });
-let lastPpHit = 0;
-function ppHit() {
-  if (performance.now() - lastPpHit < 450) return;
-  lastPpHit = performance.now();
-  socket.emit('pp-hit');
-  const me2 = players.get(myId); if (me2) me2.group.userData.act = { type: 'punch', t: 0 };
-}
 
-// --- bi-a ---
+// --- bi-a & hockey raycast ---
 let charging = 0, aimAngle = 0;
 const tablePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -SURF);
+const hockeyPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -HSURF);
 const hitPt = new THREE.Vector3();
-function pointerToTable(e) {
+function pointerToTable(e, plane = tablePlane) {
   const r = canvas.getBoundingClientRect();
   ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
-  return raycaster.ray.intersectPlane(tablePlane, hitPt) ? hitPt : null;
+  return raycaster.ray.intersectPlane(plane, hitPt) ? hitPt : null;
+}
+function sendHockeyMove(nowForced) {
+  if (!hockeyMode || !hkSide) return;
+  const now = performance.now();
+  if (!nowForced && now - hkSendT < 28) return;
+  hkSendT = now;
+  socket.emit('hk-move', { x: +hkTarget.x.toFixed(3), z: +hkTarget.z.toFixed(3) });
 }
 canvas.addEventListener('pointermove', (e) => {
+  if (hockeyMode && hkSide) {
+    const pt = pointerToTable(e, hockeyPlane);
+    if (pt) {
+      const [cx, cz] = hkClampLocal(hkSide, pt.x - PP_C.x, pt.z - PP_C.z);
+      hkTarget.x = cx; hkTarget.z = cz;
+      sendHockeyMove(false);
+    }
+    return;
+  }
   if (!poolMode) return;
   const pt = pointerToTable(e), cb = game.poolPos[0];
   if (pt && cb) aimAngle = Math.atan2(pt.z - POOL_C.z - cb[1], pt.x - POOL_C.x - cb[0]);
 });
 canvas.addEventListener('pointerdown', (e) => {
-  if (gameMode === 'pp') return ppHit();
+  if (hockeyMode && hkSide) {
+    const pt = pointerToTable(e, hockeyPlane);
+    if (pt) {
+      const [cx, cz] = hkClampLocal(hkSide, pt.x - PP_C.x, pt.z - PP_C.z);
+      hkTarget.x = cx; hkTarget.z = cz;
+      sendHockeyMove(true);
+    }
+    return;
+  }
   if (poolMode && !game.poolMoving && canShoot()) {
     const pt = pointerToTable(e), cb = game.poolPos[0];
     if (pt && cb) aimAngle = Math.atan2(pt.z - POOL_C.z - cb[1], pt.x - POOL_C.x - cb[0]);
@@ -1836,25 +1918,28 @@ socket.on('pool-seats', (s) => { poolSeats = s; refreshPoolHud(); });
 socket.on('pool', applyPool);
 socket.on('pool-event', ({ text }) => addChat('', text, true));
 
-// --- bóng bàn ---
-socket.on('pp', (s) => {
-  ppNames = { A: s.A, B: s.B }; ppIds = s.ids || {}; ppScore = s.score;
-  drawBoard(s.A, s.B, s.score); refreshPpHud();
+// --- bàn hockey ---
+socket.on('hk', (s) => {
+  hkNames = { A: s.A, B: s.B }; hkIds = s.ids || {}; hkScore = s.score;
+  if (s.state) game.hkState = s.state;
+  drawBoard(s.A, s.B, s.score); refreshHkHud();
 });
-socket.on('pp-side', (slot) => {
-  if (ppSide && slot !== ppSide) { ppSide = slot; const e = ppEnd(slot); me.walkTo = { x: e.x, z: e.z, game: 'pp-pos', side: slot }; }
+socket.on('hk-state', (st) => { if (Array.isArray(st) && st.length === 6) game.hkState = st; });
+socket.on('hk-side', (slot) => {
+  if (hockeyMode && slot !== hkSide) {
+    hkSide = slot;
+    hkTarget.x = slot === 'A' ? -1.1 : 1.1; hkTarget.z = 0;
+    const e = hkEnd(slot); me.walkTo = { x: e.x, z: e.z, game: 'hockey-pos', side: slot };
+    refreshHkHud();
+  }
 });
-socket.on('pp-full', () => { addChat('', 'Bàn bóng bàn đã đủ 2 người chơi 🏓', true); leaveGames(); });
-socket.on('pp-ball', ({ from, to, dur }) => {
-  const fx0 = PP_C.x + (from === 'A' ? -1.25 : 1.25), tx = PP_C.x + (to === 'A' ? -1.25 : 1.25);
-  game.ppFlight = { t: 0, dur, fx: fx0, tx, zr: (Math.random() - 0.5) * 0.9, z0: (Math.random() - 0.5) * 0.7 };
+socket.on('hk-full', () => { addChat('', 'Bàn Hockey đã đủ 2 người chơi 🏒', true); leaveGames(); });
+socket.on('hk-goal', ({ scorer, score }) => {
+  hkScore = score; drawBoard(hkNames.A, hkNames.B, score); refreshHkHud();
+  const gx = PP_C.x + (scorer === 'A' ? HL / 2 : -HL / 2);
+  spawnFx('🚨', { x: gx, z: PP_C.z });
+  spawnVipFx('confetti', { x: gx, y: 0.2, z: PP_C.z });
 });
-socket.on('pp-swing', ({ side }) => { const p = players.get(ppIds[side]); if (p) p.group.userData.act = { type: 'punch', t: 0 }; });
-socket.on('pp-miss', ({ side }) => {
-  game.ppFlight = null; game.ppBall.visible = false;
-  spawnFx('❌', { x: PP_C.x + (side === 'A' ? -1.4 : 1.4), z: PP_C.z });
-});
-socket.on('pp-stop', () => { game.ppFlight = null; game.ppBall.visible = false; });
 
 // --- nhạc + sàn nhảy ---
 const dancers = new Set();
@@ -1921,13 +2006,18 @@ function updateGameVisuals(dt, now) {
   game.mirror.rotation.y += dt * 0.8;
   for (const m of game.lamp) m.visible = !poolMode;
   game.danceLight.color.setHSL(on ? (beat / 32) % 1 : 0.78, 1, 0.6);
-  // quả bóng bàn
-  const fl = game.ppFlight;
-  if (fl) {
-    fl.t += dt / fl.dur;
-    const u = Math.min(1, fl.t);
-    game.ppBall.visible = true;
-    game.ppBall.position.set(fl.fx + (fl.tx - fl.fx) * u, 0.86 + Math.sin(u * Math.PI) * 0.45, PP_C.z + fl.z0 + (fl.zr - fl.z0) * u);
+  // bàn hockey: nội suy mượt đĩa + 2 tay cầm đẩy
+  if (game.boardSprite) game.boardSprite.visible = !hockeyMode;
+  if (game.hkPuck) {
+    const t = game.hkState, c = game.hkCur, k = Math.min(1, dt * 24);
+    for (let i = 0; i < 6; i++) c[i] += (t[i] - c[i]) * k;
+    game.hkPuck.position.set(PP_C.x + c[0], HSURF + 0.018, PP_C.z + c[1]);
+    const ax = (hockeyMode && hkSide === 'A') ? hkTarget.x : c[2];
+    const az = (hockeyMode && hkSide === 'A') ? hkTarget.z : c[3];
+    const bx = (hockeyMode && hkSide === 'B') ? hkTarget.x : c[4];
+    const bz = (hockeyMode && hkSide === 'B') ? hkTarget.z : c[5];
+    game.hkPadA.position.set(PP_C.x + ax, HSURF, PP_C.z + az);
+    game.hkPadB.position.set(PP_C.x + bx, HSURF, PP_C.z + bz);
   }
   // gậy bi-a + đường ngắm
   const cb = game.poolPos[0];
@@ -2273,7 +2363,14 @@ function loop(now) {
       if (keys['d'] || keys['arrowright']) r += 1;
       if (keys['a'] || keys['arrowleft']) r -= 1;
     }
-    if (gameMode === 'claw') { f = 0; r = 0; } else if ((f || r) && gameMode) leaveGames();
+    if (gameMode === 'claw') { f = 0; r = 0; }
+    else if (gameMode === 'hockey' && hkSide) {
+      if (f || r) {
+        const [cx, cz] = hkClampLocal(hkSide, hkTarget.x + r * 3.8 * dt, hkTarget.z - f * 3.8 * dt);
+        hkTarget.x = cx; hkTarget.z = cz; sendHockeyMove(false);
+      }
+      f = 0; r = 0;
+    } else if ((f || r) && gameMode) leaveGames();
     // đứng dậy khi bấm phím di chuyển
     if ((f || r) && me.sit) {
       const s = seatsInfo.get(me.sit);
@@ -2339,6 +2436,9 @@ function loop(now) {
     } else if (poolMode) {
       camera.position.lerp(new THREE.Vector3(POOL_C.x, 4.4, POOL_C.z + 2.0), Math.min(1, dt * 6));
       camera.lookAt(POOL_C.x, 0.9, POOL_C.z);
+    } else if (hockeyMode) {
+      camera.position.lerp(new THREE.Vector3(PP_C.x, 4.3, PP_C.z + 2.0), Math.min(1, dt * 6));
+      camera.lookAt(PP_C.x, 0.88, PP_C.z);
     } else if (fpMode) {
       camera.position.set(me.x, 1.85 + (mine.group.userData.bob || 0), me.z);
       camera.lookAt(
@@ -2354,7 +2454,7 @@ function loop(now) {
     }
     camera.position.z = Math.min(camera.position.z, 17.6);
     camera.position.x = Math.min(15.4, Math.max(-15.4, camera.position.x));
-    mine.group.visible = !((fpMode && !fsMode) || poolMode);
+    mine.group.visible = !((fpMode && !fsMode) || poolMode || hockeyMode);
   }
 
   for (const [id, p] of players) {
@@ -2367,9 +2467,11 @@ function loop(now) {
     g.rotation.y += d * Math.min(1, dt * 12);
     g.userData.animate(p.moving, dt);
     g.position.y = g.userData.bob || 0;
-    // chơi bi-a: ẩn người đứng quanh bàn + tên/bong bóng chat để không che tầm nhìn
-    g.visible = !(poolMode && Math.hypot(g.position.x - POOL_C.x, g.position.z - POOL_C.z) < 2.9);
-    p.label.visible = !poolMode; if (p.bubble) p.bubble.visible = !poolMode;
+    // chơi bi-a / hockey: ẩn người đứng sát bàn + tên/bong bóng chat để không che tầm nhìn
+    const hideTable = (poolMode && Math.hypot(g.position.x - POOL_C.x, g.position.z - POOL_C.z) < 2.9)
+      || (hockeyMode && Math.hypot(g.position.x - PP_C.x, g.position.z - PP_C.z) < 2.9);
+    g.visible = !hideTable;
+    p.label.visible = !(poolMode || hockeyMode); if (p.bubble) p.bubble.visible = !(poolMode || hockeyMode);
   }
   const tsec = now / 1000;
   updateVipFx(dt, now);

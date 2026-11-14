@@ -84,7 +84,7 @@ const IMG_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 // rooms: name -> { players: Map, video: {id,time,playing,ts} }
 const rooms = new Map();
 function getRoom(name) {
-  if (!rooms.has(name)) rooms.set(name, { players: new Map(), chat: [], seats: new Map(), tables: {}, claw: { by: null, state: null }, poolSeats: { A: null, B: null, turn: 'A' }, arc: {}, pool: newPool(), pp: { A: null, B: null, score: [0, 0], chain: 0, rally: 0, running: false, hitAt: { A: 0, B: 0 } }, video: { id: 'dQw4w9WgXcQ', time: 0, playing: false, ts: Date.now() } });
+  if (!rooms.has(name)) rooms.set(name, { players: new Map(), chat: [], seats: new Map(), tables: {}, claw: { by: null, state: null }, poolSeats: { A: null, B: null, turn: 'A' }, arc: {}, pool: newPool(), hk: newHockey(), video: { id: 'dQw4w9WgXcQ', time: 0, playing: false, ts: Date.now() } });
   return rooms.get(name);
 }
 const BASE_FACES = ['happy', 'normal', 'surprised', 'sad', 'angry', 'wink', 'laugh'];
@@ -111,12 +111,11 @@ function newPool() {
 }
 function poolStep(pool, dt) {
   const B = pool.balls, ev = [];
-  let moving = false;
   for (let i = 0; i < B.length; i++) {
     const b = B[i]; if (b.out) continue;
     b.x += b.vx * dt; b.y += b.vy * dt;
     const f = Math.pow(0.4, dt); b.vx *= f; b.vy *= f;
-    if (Math.hypot(b.vx, b.vy) < 0.04) { b.vx = 0; b.vy = 0; } else moving = true;
+    if (Math.hypot(b.vx, b.vy) < 0.04) { b.vx = 0; b.vy = 0; }
     if (b.x < -PL / 2 + BR) { b.x = -PL / 2 + BR; b.vx = Math.abs(b.vx) * 0.9; }
     if (b.x > PL / 2 - BR) { b.x = PL / 2 - BR; b.vx = -Math.abs(b.vx) * 0.9; }
     if (b.y < -PW / 2 + BR) { b.y = -PW / 2 + BR; b.vy = Math.abs(b.vy) * 0.9; }
@@ -137,6 +136,8 @@ function poolStep(pool, dt) {
       }
     }
   }
+  let moving = false;
+  for (const b of B) if (!b.out && (b.vx || b.vy)) { moving = true; break; }
   return { moving, ev };
 }
 const poolPublic = (pool) => pool.balls.map((b) => [+b.x.toFixed(3), +b.y.toFixed(3), b.out ? 1 : 0]);
@@ -159,16 +160,21 @@ function poolShoot(rn, room, angle, power, by, id) {
   pool.balls[0].vx = Math.cos(angle) * sp; pool.balls[0].vy = Math.sin(angle) * sp;
   pool.moving = true; pool.by = by; pool.shot = [];
   pool.timer = setInterval(() => {
-    let res;
-    for (let s = 0; s < 4; s++) res = poolStep(pool, 1 / 120);
-    for (const i of res.ev) {
+    const ev = [];
+    let moving = false;
+    for (let s = 0; s < 4; s++) {
+      const r = poolStep(pool, 1 / 120);
+      moving = r.moving;
+      if (r.ev.length) ev.push(...r.ev);
+    }
+    for (const i of ev) {
       pool.shot.push(i);
       if (i === 0) io.to(rn).emit('pool-event', { text: `${by} bị rơi bi trắng! ⚪` });
       else io.to(rn).emit('pool-event', { text: `${by} bỏ bi số ${i} vào lỗ 🎱` });
     }
-    if (!res.moving) {
+    if (!moving) {
       clearInterval(pool.timer); pool.timer = null; pool.moving = false;
-      const scratch = pool.balls[0].out;
+      const scratch = pool.balls[0].out || pool.shot.includes(0);
       if (scratch) Object.assign(pool.balls[0], { x: -PL / 4, y: 0, vx: 0, vy: 0, out: false });
       if (poolActive(room)) {
         const side = seats.turn, mine = (i) => (side === 'A' ? i >= 1 && i <= 5 : i >= 6 && i <= 10);
@@ -179,10 +185,13 @@ function poolShoot(rn, room, angle, power, by, id) {
           const w = aDone && !bDone ? 'A' : bDone && !aDone ? 'B' : side;
           io.to(rn).emit('pool-event', { text: `🏆 ${ps[w]} thắng ván bi-a! Xếp lại bi...` });
           setTimeout(() => { seats.turn = 'A'; poolReset(rn, room); poolSeatsBroadcast(rn, room); }, 3000);
-        } else {
-          if (scratch || !own) seats.turn = side === 'A' ? 'B' : 'A';
+        } else if (scratch || !own) {
+          seats.turn = side === 'A' ? 'B' : 'A';
           poolSeatsBroadcast(rn, room);
-          io.to(rn).emit('pool-event', { text: `Lượt của ${poolSeatsPublic(room)[seats.turn]} (bi ${seats.turn === 'A' ? '1-5' : '6-10'})` });
+          io.to(rn).emit('pool-event', { text: `Lượt của ${ps[seats.turn]} (bi ${seats.turn === 'A' ? '1-5' : '6-10'})` });
+        } else {
+          poolSeatsBroadcast(rn, room);
+          io.to(rn).emit('pool-event', { text: `🎯 ${ps[side]} ăn bi đúng — được đánh tiếp! (bi ${side === 'A' ? '1-5' : '6-10'})` });
         }
       } else if (pool.balls.slice(1).every((b) => b.out)) { io.to(rn).emit('pool-event', { text: `🎉 ${by} đã dọn sạch bàn! Xếp lại bi...` }); setTimeout(() => poolReset(rn, room), 2500); }
     }
@@ -195,12 +204,36 @@ function poolReset(rn, room) {
   io.to(rn).emit('pool', { balls: poolPublic(room.pool), moving: false });
 }
 
-/* ---------- Bóng bàn (đối đầu với máy hoặc người) ---------- */
+/* ---------- Bàn Hockey (đối đầu với máy hoặc 2 người chơi thời gian thực) ---------- */
+const HL = 3.0, HW = 1.6, HG = 0.30, HK_PR = 0.085, HK_MR = 0.13;
 const opp = (s) => (s === 'A' ? 'B' : 'A');
-const ppHumans = (room) => ['A', 'B'].filter((s) => room.pp[s] && room.players.has(room.pp[s]));
-function ppPublic(room) {
-  const n = (s) => (room.pp[s] && room.players.get(room.pp[s]) ? room.players.get(room.pp[s]).name : null);
-  return { A: n('A'), B: n('B'), ids: { A: room.pp.A, B: room.pp.B }, score: room.pp.score };
+function newHockey() {
+  return {
+    A: null, B: null, score: [0, 0], timer: null, pause: 0,
+    puck: { x: 0, z: 0, vx: 0, vz: 0 },
+    mA: { x: -1.1, z: 0, tx: -1.1, tz: 0, vx: 0, vz: 0 },
+    mB: { x: 1.1, z: 0, tx: 1.1, tz: 0, vx: 0, vz: 0 },
+  };
+}
+function hkClamp(side, x, z) {
+  const cz = Math.min(HW / 2 - HK_MR, Math.max(-HW / 2 + HK_MR, +z || 0));
+  const cx = side === 'A'
+    ? Math.min(-HK_MR, Math.max(-HL / 2 + HK_MR, +x || 0))
+    : Math.min(HL / 2 - HK_MR, Math.max(HK_MR, +x || 0));
+  return [cx, cz];
+}
+const hkHumans = (room) => ['A', 'B'].filter((s) => room.hk[s] && room.players.has(room.hk[s]));
+const hkSnap = (hk) => [+hk.puck.x.toFixed(3), +hk.puck.z.toFixed(3), +hk.mA.x.toFixed(3), +hk.mA.z.toFixed(3), +hk.mB.x.toFixed(3), +hk.mB.z.toFixed(3)];
+function hkPublic(room) {
+  const hk = room.hk, n = (s) => (hk[s] && room.players.get(hk[s]) ? room.players.get(hk[s]).name : null);
+  return { A: n('A'), B: n('B'), ids: { A: hk.A, B: hk.B }, score: hk.score, state: hkSnap(hk) };
+}
+function hkDropPuck(hk, towardSide) {
+  const dir = towardSide === 'A' ? -1 : towardSide === 'B' ? 1 : (Math.random() < 0.5 ? -1 : 1);
+  hk.puck.x = towardSide ? dir * 0.38 : 0;
+  hk.puck.z = 0;
+  hk.puck.vx = towardSide ? 0 : dir * 1.5;
+  hk.puck.vz = towardSide ? 0 : (Math.random() - 0.5) * 1.1;
 }
 /* ---------- Máy game console nhiều người (chủ phòng chạy game, server chuyển tiếp) ---------- */
 const ARC_MAX = { ludo: 4, bomber: 4, tank: 4 };
@@ -229,44 +262,123 @@ function arcLeave(rn, room, id) {
   }
   io.to(rn).emit('arc-counts', arcCounts(room));
 }
-function ppFlight(rn, room, from, dur, token) {
-  const pp = room.pp;
-  if (token !== pp.chain) return;
-  const to = opp(from);
-  pp.hitAt[to] = 0;
-  const arrive = Date.now() + dur * 1000;
-  io.to(rn).emit('pp-ball', { from, to, dur });
-  setTimeout(() => {
-    if (token !== pp.chain) return;
-    const human = pp[to] && room.players.has(pp[to]);
-    const ok = human ? pp.hitAt[to] >= arrive - 650 : Math.random() < 0.8;
-    if (ok) {
-      pp.rally++;
-      io.to(rn).emit('pp-swing', { side: to });
-      ppFlight(rn, room, to, Math.max(0.6, 1.1 - pp.rally * 0.04), token);
+function hkAiTarget(hk, side) {
+  const sgn = side === 'A' ? -1 : 1, m = side === 'A' ? hk.mA : hk.mB, p = hk.puck;
+  let tx, tz;
+  if (p.x * sgn > -0.05) {
+    if ((p.x - m.x) * sgn > 0.04) {
+      tx = sgn * (HL / 2 - HK_MR - 0.02);
+      tz = p.z + (p.z >= 0 ? -0.22 : 0.22);
     } else {
-      const wi = from === 'A' ? 0 : 1;
-      pp.score[wi]++; pp.rally = 0;
-      io.to(rn).emit('pp-miss', { side: to });
-      if (pp.score[wi] >= 11) {
-        const nm = ppPublic(room)[from] || 'Máy';
-        io.to(rn).emit('pool-event', { text: `🏓 ${nm} thắng ván bóng bàn ${pp.score[0]}-${pp.score[1]}!` });
-        pp.score = [0, 0];
-      }
-      io.to(rn).emit('pp', ppPublic(room));
-      setTimeout(() => { if (token === pp.chain && ppHumans(room).length) ppServe(rn, room, from); }, 1700);
+      tx = p.x;
+      tz = p.z * 0.94;
     }
-  }, dur * 1000 + 250);
+  } else {
+    tx = sgn * 1.12;
+    tz = Math.max(-0.42, Math.min(0.42, p.z * 0.65));
+  }
+  const [cx, cz] = hkClamp(side, tx, tz);
+  m.tx = cx; m.tz = cz;
 }
-function ppServe(rn, room, from) {
-  room.pp.chain++; room.pp.running = true;
-  ppFlight(rn, room, from, 1.1, room.pp.chain);
+function hkStep(hk, room, dt) {
+  for (const s of ['A', 'B']) {
+    const human = hk[s] && room.players.has(hk[s]);
+    if (!human) hkAiTarget(hk, s);
+    const m = s === 'A' ? hk.mA : hk.mB;
+    const maxSpd = human ? 11.5 : 4.6;
+    const dx = m.tx - m.x, dz = m.tz - m.z, d = Math.hypot(dx, dz);
+    const step = Math.min(d, maxSpd * dt);
+    const nx = d > 1e-5 ? m.x + (dx / d) * step : m.x;
+    const nz = d > 1e-5 ? m.z + (dz / d) * step : m.z;
+    m.vx = (nx - m.x) / dt; m.vz = (nz - m.z) / dt;
+    m.x = nx; m.z = nz;
+  }
+  if (hk.pause > 0) { hk.pause -= dt; return null; }
+  const p = hk.puck;
+  p.x += p.vx * dt; p.z += p.vz * dt;
+  const f = Math.pow(0.84, dt); p.vx *= f; p.vz *= f;
+  for (const m of [hk.mA, hk.mB]) {
+    let dx = p.x - m.x, dz = p.z - m.z, d = Math.hypot(dx, dz);
+    if (d < HK_PR + HK_MR) {
+      if (d < 1e-4) { dx = m === hk.mA ? 1 : -1; dz = 0; d = 1; } else { dx /= d; dz /= d; }
+      const pen = HK_PR + HK_MR - d + 0.002;
+      p.x += dx * pen; p.z += dz * pen;
+      const rvn = (p.vx - m.vx) * dx + (p.vz - m.vz) * dz;
+      if (rvn < 0) {
+        const imp = -1.9 * rvn;
+        p.vx += imp * dx + m.vx * 0.35;
+        p.vz += imp * dz + m.vz * 0.35;
+      }
+      const vn2 = p.vx * dx + p.vz * dz;
+      if (vn2 < 1.8) { p.vx += (1.8 - vn2) * dx; p.vz += (1.8 - vn2) * dz; }
+      const sp = Math.hypot(p.vx, p.vz);
+      if (sp > 9.2) { p.vx *= 9.2 / sp; p.vz *= 9.2 / sp; }
+    }
+  }
+  const zLim = HW / 2 - HK_PR, xLim = HL / 2 - HK_PR;
+  if (p.z < -zLim) { p.z = -zLim; p.vz = Math.abs(p.vz) * 0.94; }
+  if (p.z > zLim) { p.z = zLim; p.vz = -Math.abs(p.vz) * 0.94; }
+  const inGoal = Math.abs(p.z) < HG - HK_PR * 0.25;
+  if (inGoal) {
+    if (p.x > HL / 2 + HK_PR * 0.3) return 'A';
+    if (p.x < -HL / 2 - HK_PR * 0.3) return 'B';
+  } else {
+    if (p.x < -xLim) { p.x = -xLim; p.vx = Math.abs(p.vx) * 0.94; }
+    if (p.x > xLim) { p.x = xLim; p.vx = -Math.abs(p.vx) * 0.94; }
+  }
+  if (Math.hypot(p.vx, p.vz) < 0.08 && Math.abs(p.x) > xLim - 0.05 && Math.abs(p.z) > zLim - 0.05) {
+    p.vx -= Math.sign(p.x) * 1.0; p.vz -= Math.sign(p.z) * 1.0;
+  }
+  return null;
 }
-function ppLeave(rn, room, id) {
-  const pp = room.pp;
-  for (const s of ['A', 'B']) if (pp[s] === id) pp[s] = null;
-  if (!ppHumans(room).length) { pp.chain++; pp.running = false; pp.score = [0, 0]; pp.rally = 0; io.to(rn).emit('pp-stop'); }
-  io.to(rn).emit('pp', ppPublic(room));
+function hkStart(rn, room) {
+  const hk = room.hk;
+  if (hk.timer) return;
+  hkDropPuck(hk, null);
+  hk.pause = 0.5;
+  hk.timer = setInterval(() => {
+    if (!hkHumans(room).length) { hkStop(rn, room); return; }
+    let goal = null;
+    for (let s = 0; s < 4; s++) {
+      const g = hkStep(hk, room, 1 / 120);
+      if (g) { goal = g; break; }
+    }
+    if (goal) {
+      const wi = goal === 'A' ? 0 : 1;
+      hk.score[wi]++;
+      const pub = hkPublic(room);
+      const scorerName = pub[goal] || '🤖 Máy';
+      io.to(rn).emit('hk-goal', { scorer: goal, score: hk.score });
+      if (hk.score[wi] >= 7) {
+        io.to(rn).emit('pool-event', { text: `🏆 ${scorerName} thắng ván Hockey ${hk.score[0]}-${hk.score[1]}! 🏒` });
+        hk.score = [0, 0];
+        hkDropPuck(hk, null);
+        hk.pause = 1.5;
+      } else {
+        hkDropPuck(hk, opp(goal));
+        hk.pause = 0.9;
+      }
+      io.to(rn).emit('hk', hkPublic(room));
+    }
+    io.to(rn).volatile.emit('hk-state', hkSnap(hk));
+  }, 33);
+}
+function hkStop(rn, room) {
+  const hk = room.hk;
+  if (hk.timer) { clearInterval(hk.timer); hk.timer = null; }
+  hk.score = [0, 0]; hk.pause = 0;
+  hk.puck = { x: 0, z: 0, vx: 0, vz: 0 };
+  hk.mA = { x: -1.1, z: 0, tx: -1.1, tz: 0, vx: 0, vz: 0 };
+  hk.mB = { x: 1.1, z: 0, tx: 1.1, tz: 0, vx: 0, vz: 0 };
+  io.to(rn).emit('hk', hkPublic(room));
+}
+function hkLeave(rn, room, id) {
+  const hk = room.hk;
+  let ch = false;
+  for (const s of ['A', 'B']) if (hk[s] === id) { hk[s] = null; ch = true; }
+  if (!ch) return;
+  if (!hkHumans(room).length) hkStop(rn, room);
+  else io.to(rn).emit('hk', hkPublic(room));
 }
 
 io.on('connection', (socket) => {
@@ -289,7 +401,7 @@ io.on('connection', (socket) => {
         if (op.cid === cid && oid !== socket.id) {
           room.players.delete(oid);
           freeSeats(room, oid);
-          ppLeave(roomName, room, oid); poolLeave(roomName, room, oid); arcLeave(roomName, room, oid);
+          hkLeave(roomName, room, oid); poolLeave(roomName, room, oid); arcLeave(roomName, room, oid);
           if (room.claw.by === oid) room.claw.by = null;
           io.to(roomName).emit('player-leave', oid);
           io.sockets.sockets.get(oid)?.disconnect(true);
@@ -314,7 +426,7 @@ io.on('connection', (socket) => {
     };
     room.players.set(socket.id, p);
     const rMeta = store.rooms[roomName];
-    socket.emit('init', { id: socket.id, players: [...room.players.values()], video: currentVideo(room.video), tables: room.tables, chat: room.chat, pool: { balls: poolPublic(room.pool), moving: room.pool.moving }, pp: ppPublic(room), clawState: room.claw.state, poolSeats: poolSeatsPublic(room), arcCounts: arcCounts(room),
+    socket.emit('init', { id: socket.id, players: [...room.players.values()], video: currentVideo(room.video), tables: room.tables, chat: room.chat, pool: { balls: poolPublic(room.pool), moving: room.pool.moving }, hk: hkPublic(room), clawState: room.claw.state, poolSeats: poolSeatsPublic(room), arcCounts: arcCounts(room),
       theme: (rMeta || {}).theme || {}, videoLock: !!(rMeta && rMeta.videoLock), locked: !!(rMeta && rMeta.pw), invite: rMeta && rMeta.pw ? ensureInvite(rMeta) : '', isOwner: !!(rMeta && rMeta.owner && rMeta.owner === socket.data.uid) });
     socket.to(roomName).emit('player-join', p);
     io.to(roomName).emit('count', room.players.size);
@@ -368,17 +480,26 @@ io.on('connection', (socket) => {
   socket.on('pool-get', () => { if (!room) return; socket.emit('pool', { balls: poolPublic(room.pool), moving: room.pool.moving }); socket.emit('pool-seats', poolSeatsPublic(room)); });
   socket.on('pool-reset', () => { if (room) poolReset(roomName, room); });
 
-  socket.on('pp-join', ({ side }) => {
+  socket.on('hk-join', ({ side } = {}) => {
     if (!room || !room.players.has(socket.id)) return;
-    const pp = room.pp;
-    for (const s of ['A', 'B']) if (pp[s] === socket.id) pp[s] = null;
+    const hk = room.hk;
+    for (const s of ['A', 'B']) if (hk[s] === socket.id) hk[s] = null;
     const want = side === 'B' ? 'B' : 'A';
-    const slot = !pp[want] || !room.players.has(pp[want]) ? want : (!pp[opp(want)] || !room.players.has(pp[opp(want)]) ? opp(want) : null);
-    if (!slot) return socket.emit('pp-full');
-    pp[slot] = socket.id;
-    socket.emit('pp-side', slot);
-    io.to(roomName).emit('pp', ppPublic(room));
-    if (!pp.running) setTimeout(() => { if (ppHumans(room).length && !pp.running) ppServe(roomName, room, opp(slot)); }, 1200);
+    const slot = !hk[want] || !room.players.has(hk[want]) ? want : (!hk[opp(want)] || !room.players.has(hk[opp(want)]) ? opp(want) : null);
+    if (!slot) return socket.emit('hk-full');
+    hk[slot] = socket.id;
+    const m = slot === 'A' ? hk.mA : hk.mB;
+    m.x = m.tx = slot === 'A' ? -1.1 : 1.1; m.z = m.tz = 0;
+    socket.emit('hk-side', slot);
+    if (hkHumans(room).length === 2) {
+      hk.score = [0, 0];
+      hkDropPuck(hk, null);
+      hk.pause = 0.8;
+      const pub = hkPublic(room);
+      io.to(roomName).emit('pool-event', { text: `🏒 Ván Hockey 2 người: ${pub.A} vs ${pub.B} — ai chạm 7 điểm trước là thắng!` });
+    }
+    io.to(roomName).emit('hk', hkPublic(room));
+    hkStart(roomName, room);
   });
   /* ----- VIP / admin / giao diện phòng / mật khẩu phòng ----- */
   const tries = [];
@@ -549,11 +670,15 @@ io.on('connection', (socket) => {
     for (const m of l.players) if (m && m !== socket.id) io.to(m).emit('arc-state', { game, data });
   });
 
-  socket.on('pp-leave', () => { if (room) ppLeave(roomName, room, socket.id); });
-  socket.on('pp-hit', () => {
+  socket.on('hk-leave', () => { if (room) hkLeave(roomName, room, socket.id); });
+  socket.on('hk-move', ({ x, z } = {}) => {
     if (!room) return;
-    const pp = room.pp;
-    for (const s of ['A', 'B']) if (pp[s] === socket.id) pp.hitAt[s] = Date.now();
+    const hk = room.hk;
+    const slot = hk.A === socket.id ? 'A' : hk.B === socket.id ? 'B' : null;
+    if (!slot) return;
+    const [cx, cz] = hkClamp(slot, x, z);
+    const m = slot === 'A' ? hk.mA : hk.mB;
+    m.tx = cx; m.tz = cz;
   });
 
   socket.on('dance', (on) => {
@@ -653,12 +778,12 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     if (!room) return;
     freeSeats(room, socket.id);
-    ppLeave(roomName, room, socket.id); poolLeave(roomName, room, socket.id); arcLeave(roomName, room, socket.id);
+    hkLeave(roomName, room, socket.id); poolLeave(roomName, room, socket.id); arcLeave(roomName, room, socket.id);
     if (room.claw.by === socket.id) room.claw.by = null;
     room.players.delete(socket.id);
     io.to(roomName).emit('player-leave', socket.id);
     io.to(roomName).emit('count', room.players.size);
-    if (room.players.size === 0) { if (room.pool.timer) clearInterval(room.pool.timer); room.pp.chain++; rooms.delete(roomName); }
+    if (room.players.size === 0) { if (room.pool.timer) clearInterval(room.pool.timer); if (room.hk.timer) clearInterval(room.hk.timer); rooms.delete(roomName); }
   });
 });
 
