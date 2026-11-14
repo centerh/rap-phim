@@ -714,6 +714,20 @@ const PL = 3.0, PW = 1.5, BR = 0.065, SURF = 0.92;
 const BALL_COLORS = [0xffffff, 0xf4d03f, 0x2e6bd6, 0xd62e2e, 0x7d3cc4, 0xf08a24, 0x1f9d55, 0x8b1a1a, 0x111111, 0xf4d03f, 0x2e6bd6];
 const game = { poolBalls: [], poolPos: [], poolMoving: false, tiles: [], ppBall: null, ppFlight: null, board: null, cue: null, aimLine: null, mirror: null };
 
+function ballTexture(i) {
+  const col = '#' + BALL_COLORS[i].toString(16).padStart(6, '0');
+  return bannerTexture(512, 256, (ctx, w, h) => {
+    const stripe = i >= 9;
+    ctx.fillStyle = stripe ? '#ffffff' : col; ctx.fillRect(0, 0, w, h);
+    if (stripe) { ctx.fillStyle = col; ctx.fillRect(0, 56, w, 144); }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const x of [0, 256, 512]) {
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, 128, 58, 0, 7); ctx.fill();
+      ctx.fillStyle = '#111'; ctx.font = `900 ${i >= 10 ? 62 : 78}px Arial, sans-serif`;
+      ctx.fillText(String(i), x, 134);
+    }
+  });
+}
 function buildGameZone() {
   const L = (c) => new THREE.MeshLambertMaterial({ color: c });
   const BM = (c) => new THREE.MeshBasicMaterial({ color: c });
@@ -744,9 +758,11 @@ function buildGameZone() {
     const h = put(pool, new THREE.CircleGeometry(0.12, 20), BM(0x050505), px, SURF + 0.004, py); h.rotation.x = -Math.PI / 2;
   }
   for (let i = 0; i < 11; i++) {
-    const b = new THREE.Mesh(new THREE.SphereGeometry(BR, 20, 14), new THREE.MeshPhongMaterial({ color: BALL_COLORS[i], shininess: 80 }));
+    // bi có số: mặt số hướng lên trên, mỗi bi xoay một góc khác nhau
+    const b = new THREE.Group();
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(BR, 32, 24), new THREE.MeshPhongMaterial({ map: i ? ballTexture(i) : null, color: 0xffffff, shininess: 80 }));
+    ball.rotation.z = Math.PI / 2; b.add(ball); b.rotation.y = i * 1.7;
     b.position.set(0, SURF + BR, 0); scene.add(b); game.poolBalls.push(b);
-    if (i >= 9) { const st = new THREE.Mesh(new THREE.SphereGeometry(BR * 1.01, 16, 10, 0, 6.3, 1.2, 0.5), new THREE.MeshPhongMaterial({ color: 0xffffff })); b.add(st); }
   }
   // đèn treo trên bàn
   game.lamp = [put(pool, new THREE.CylinderGeometry(0.02, 0.02, 3, 6), BM(0x222222), 0, 3.8, 0),
