@@ -203,7 +203,7 @@ io.on('connection', (socket) => {
   socket.on('join', (data) => {
     const { room: r, name, look } = data;
     const cid = clean(data.cid, 40);
-    roomName = clean(r, 30).replace(/[^\w-]/g, '') || 'main';
+    roomName = clean(r, 30).replace(/[^\w-]/g, '').toLowerCase() || 'main';
     room = getRoom(roomName);
     // cùng 1 tab vào lại -> xoá nhân vật cũ
     if (cid) {
@@ -284,6 +284,7 @@ io.on('connection', (socket) => {
     if (!p || !Number.isFinite(+angle) || !Number.isFinite(+power)) return;
     poolShoot(roomName, room, +angle, +power, p.name, socket.id);
   });
+  socket.on('pool-get', () => { if (!room) return; socket.emit('pool', { balls: poolPublic(room.pool), moving: room.pool.moving }); socket.emit('pool-seats', poolSeatsPublic(room)); });
   socket.on('pool-reset', () => { if (room) poolReset(roomName, room); });
 
   socket.on('pp-join', ({ side }) => {

@@ -3,6 +3,7 @@ import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { Arcade } from './arcade.js';
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+let currentRoom = 'main', lastCount = 1;
 
 const $ = (id) => document.getElementById(id);
 const socket = io ? io() : null;
@@ -1003,7 +1004,7 @@ socket.on('player-move', (m) => {
   if (!p) return;
   p.target = { x: m.x, z: m.z, ry: m.ry }; p.moving = m.moving;
 });
-socket.on('count', (n) => { $('count').textContent = '👥 ' + n; });
+socket.on('count', (n) => { lastCount = n; $('count').textContent = '👥 ' + n + ' · phòng: ' + currentRoom; });
 socket.on('chat', ({ id, name, text, ts }) => { addChat(name, text, false, false, ts); showBubble(id, text); });
 socket.on('video', (v) => { pendingVideo = v; applyPending(); });
 
@@ -1168,7 +1169,8 @@ canvas.addEventListener('wheel', (e) => { camDist = Math.min(16, Math.max(3, cam
 $('enter').onclick = () => {
   const name = $('name').value.trim() || 'Khách' + Math.floor(Math.random() * 1000);
   localStorage.setItem('cinema-name', name);
-  const room = $('room').value.trim() || 'main';
+  const room = ($('room').value.trim() || 'main').toLowerCase().replace(/[^\w-]/g, '') || 'main';
+  currentRoom = room;
   inLobby = false;
   $('lobby').classList.add('hidden');
   for (const id of ['screenPanel', 'chat', 'help', 'emoteBar']) $(id).classList.remove('hidden');
@@ -1503,7 +1505,7 @@ function startGame(id, u) {
 function enterGame(w) {
   if (w.game === 'pool') {
     gameMode = 'pool'; poolMode = true; me.ry = Math.PI;
-    setHud('', 'pool'); refreshPoolHud();
+    setHud('', 'pool'); refreshPoolHud(); socket.emit('pool-get');
   } else if (w.game === 'pp') {
     gameMode = 'pp'; ppSide = w.side; me.ry = w.side === 'A' ? Math.PI / 2 : -Math.PI / 2;
     socket.emit('pp-join', { side: w.side }); refreshPpHud();
