@@ -72,7 +72,8 @@ body.fs #scene { pointer-events: none; }
 #recBar { position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%); z-index: 35; background: rgba(229,9,20,.85);
   padding: 8px 16px; border-radius: 20px; font-size: 14px; pointer-events: none; }
 
-#screenPanel { width: min(680px, 70vw); }
+#screenPanel { width: min(920px, calc(100vw - 20px)); }
+#screenPanel .bar { flex-wrap: wrap; }
 
 .card { max-width: 920px !important; max-height: 96vh; overflow: auto; }
 .form { max-height: 74vh; overflow-y: auto; padding-right: 6px; scrollbar-width: thin; }
@@ -127,3 +128,15 @@ body.fs #scene { pointer-events: none; }
 #vipBar button.on { background: #b8860b; }
 .vip-check { display: flex; gap: 8px; align-items: center; font-size: 14px; }
 .vip-sub { background: rgba(0,0,0,.25); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+#count { font-size: 13px; white-space: nowrap; padding: 7px 10px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.18); }
+#count:hover, #count.on { background: #4a4a74; border-color: #c9a227; }
+#playerPopup { position: fixed; z-index: 46; background: rgba(20,14,30,.95); border: 1px solid #c9a227; border-radius: 12px;
+  padding: 10px 12px; min-width: 220px; max-width: min(320px, 90vw); box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+#playerPopupTitle { font-weight: bold; color: #f1d27a; font-size: 13px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,.12); }
+#playerPopupList { display: flex; flex-direction: column; gap: 5px; max-height: 50vh; overflow-y: auto; scrollbar-width: thin; }
+.prow { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 8px; background: rgba(255,255,255,.05); font-size: 14px; }
+.prow.vip { background: rgba(90,60,0,.38); border-left: 3px solid #ffd34d; }
+.prow .pnm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prow.vip .pnm { color: #ffd34d; font-weight: 600; }
+.prow .pyou { font-size: 11px; color: #9ad1ff; opacity: .85; }
+.prow button { padding: 3px 7px; font-size: 12px; }

@@ -1022,6 +1022,7 @@ function addPlayer(p) {
   scene.add(group);
   players.set(p.id, { group, label, bubble: null, target: { x: p.x, z: p.z, ry: p.ry || 0 }, moving: false, name: p.name, vip: false, auraMesh: null });
   applyVipLook(players.get(p.id), !!p.vip, !!p.aura);
+  renderPlayerPopup();
 }
 function removePlayer(id) {
   const p = players.get(id);
@@ -1029,6 +1030,7 @@ function removePlayer(id) {
   scene.remove(p.group);
   players.delete(id);
   dancers.delete(id); refreshMusic();
+  renderPlayerPopup();
 }
 // bong bóng chat nhiều dòng: hiện đủ nội dung, tự xuống dòng
 function bubbleSprite(text, vip) {
@@ -1108,7 +1110,63 @@ socket.on('player-move', (m) => {
   if (!p) return;
   p.target = { x: m.x, z: m.z, ry: m.ry }; p.moving = m.moving;
 });
-socket.on('count', (n) => { lastCount = n; $('count').textContent = '👥 ' + n + ' · phòng: ' + currentRoom; });
+socket.on('count', (n) => { lastCount = n; $('count').textContent = '👥 ' + n + ' · phòng: ' + currentRoom; renderPlayerPopup(); });
+
+let playerPopupOpen = false;
+const playerPopup = $('playerPopup');
+function renderPlayerPopup() {
+  if (!playerPopupOpen) return;
+  $('playerPopupTitle').textContent = `👥 Phòng "${currentRoom}" · ${players.size} người`;
+  const box = $('playerPopupList');
+  box.innerHTML = '';
+  const list = [...players.entries()].sort(([aId, a], [bId, b]) => {
+    if ((aId === myId) !== (bId === myId)) return aId === myId ? -1 : 1;
+    if (!!a.vip !== !!b.vip) return a.vip ? -1 : 1;
+    return String(a.name).localeCompare(String(b.name), 'vi');
+  });
+  for (const [id, p] of list) {
+    const row = document.createElement('div');
+    row.className = 'prow' + (p.vip ? ' vip' : '');
+    const nm = document.createElement('span');
+    nm.className = 'pnm';
+    nm.textContent = (p.vip ? '👑 ' : '👤 ') + p.name;
+    row.appendChild(nm);
+    if (id === myId) {
+      const you = document.createElement('span');
+      you.className = 'pyou';
+      you.textContent = '(Bạn)';
+      row.appendChild(you);
+    } else if (isVip && (!p.vip || isAdmin)) {
+      const kb = document.createElement('button');
+      kb.type = 'button';
+      kb.textContent = '🚫';
+      kb.title = 'Mời ra khỏi phòng';
+      kb.onclick = () => {
+        if (confirm(`Mời "${p.name}" ra khỏi phòng? (tạm khoá 10 phút)`)) socket.emit('kick', { target: id });
+      };
+      row.appendChild(kb);
+    }
+    box.appendChild(row);
+  }
+}
+function positionPlayerPopup() {
+  if (!playerPopupOpen) return;
+  const r = $('count').getBoundingClientRect();
+  playerPopup.style.top = Math.max(8, r.bottom + 6) + 'px';
+  playerPopup.style.left = Math.max(8, Math.min(r.left, innerWidth - playerPopup.offsetWidth - 10)) + 'px';
+}
+function togglePlayerPopup(force) {
+  playerPopupOpen = typeof force === 'boolean' ? force : !playerPopupOpen;
+  $('count').classList.toggle('on', playerPopupOpen);
+  playerPopup.classList.toggle('hidden', !playerPopupOpen);
+  if (playerPopupOpen) { renderPlayerPopup(); positionPlayerPopup(); }
+}
+$('count').onclick = (e) => { e.stopPropagation(); togglePlayerPopup(); };
+addEventListener('pointerdown', (e) => {
+  if (playerPopupOpen && !e.target.closest('#playerPopup') && !e.target.closest('#count')) togglePlayerPopup(false);
+});
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && playerPopupOpen) togglePlayerPopup(false); });
+addEventListener('resize', positionPlayerPopup);
 socket.on('chat', ({ id, name, text, ts, vip }) => { addChat(name, text, false, false, ts, vip); showBubble(id, text); });
 socket.on('video', (v) => { pendingVideo = v; applyPending(); });
 
@@ -2026,7 +2084,7 @@ function afterVipChange() {
   $('vipExtra').classList.toggle('hidden', !isVip);
   $('videoLockChk').checked = videoLock;
   $('auraBtn').classList.toggle('on', myAura);
-  renderEmoteBar(); applyVideoLockUi();
+  renderEmoteBar(); applyVideoLockUi(); renderPlayerPopup();
 }
 // nhãn tên + hào quang
 function makeNameLabel(name, vip) {
@@ -2050,6 +2108,7 @@ socket.on('player-vip', ({ id, vip, aura }) => {
   const pl = players.get(id); if (!pl) return;
   applyVipLook(pl, !!vip, !!aura);
   if (id === myId) { myAura = !!aura; afterVipChange(); }
+  renderPlayerPopup();
 });
 // hiệu ứng hạt 3D: pháo hoa / hoa giấy / thả tim
 const vfx = [];
