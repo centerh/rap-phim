@@ -103,8 +103,14 @@
   <div class="vip-sec"><b>Mã VIP</b>
     <div class="vip-row"><input id="vipCode" type="password" placeholder="Nhập mã VIP / mã admin..." autocomplete="off"><button id="vipEye" type="button" title="Hiện/ẩn mã">👁</button><button id="vipGo">Xác nhận</button><button id="vipOut" class="hidden">Đăng xuất VIP</button></div>
     <div id="vipMsg" class="muted"></div></div>
+  <div id="vipExtra" class="vip-sec hidden"><b>🛡️ Quyền VIP trong phòng</b>
+    <label class="vip-check"><input type="checkbox" id="videoLockChk"> 🔒 Khoá điều khiển video (chỉ VIP mới phát / dừng / tua / đổi video)</label>
+    <div class="muted">Phím tắt hiệu ứng: Z pháo hoa · X hoa giấy · C thả tim (hoặc dùng thanh VIP ở góc phải dưới). Biểu cảm VIP: phím 8, 9, 0, - · Click vào một người → "🚫 Mời ra khỏi phòng". Điệu nhảy VIP có thêm 4 kiểu khi nhảy ở sàn Audition.</div></div>
   <div id="vipTheme" class="vip-sec hidden"><b>🎨 Giao diện phòng (dùng ảnh của bạn — cả phòng cùng thấy)</b>
-    <div id="themeSlots"></div><button id="themeResetAll">↩ Đặt lại tất cả</button></div>
+    <div id="themeSlots"></div>
+    <div class="vip-sub"><b>💾 Bộ giao diện đã lưu</b>
+      <div class="vip-row"><input id="presetName" type="text" maxlength="24" placeholder="Tên bộ (vd: Worlds, Tết, Biển...)" autocomplete="off"><button id="presetSave">Lưu bộ hiện tại</button></div>
+      <div id="presetList"></div></div><button id="themeResetAll">↩ Đặt lại tất cả</button></div>
   <div id="roomSec" class="vip-sec hidden"><b>🔒 Mật khẩu phòng</b>
     <div class="vip-row"><input id="pwNew" type="text" maxlength="40" placeholder="Mật khẩu mới (để trống = bỏ mật khẩu)" autocomplete="off"><button id="pwSet">Lưu</button></div>
     <div id="pwNote" class="muted"></div></div>
@@ -114,12 +120,14 @@
   <div class="vip-foot"><button id="vipClose">Đóng</button></div>
 </div></div>
 <div id="gameHud" class="hidden"><span id="hudText"></span><div id="powerWrap" class="hidden"><div id="powerBar"></div></div><button id="hudSit" class="hidden">🎯 Ngồi chơi 2 người</button><button id="hudReset" class="hidden">🔄 Xếp lại bi</button><button id="hudExit">Thoát</button></div>
+<div id="vipBar" class="hidden"><button data-fx="fireworks" title="Pháo hoa (Z)">🎆</button><button data-fx="confetti" title="Hoa giấy (X)">🎊</button><button data-fx="hearts" title="Thả tim (C)">💖</button><button id="auraBtn" title="Bật/tắt hào quang">✨ Hào quang</button></div>
 <div id="emoteBar" class="hidden"></div>
 <div id="recBar" class="hidden"></div>
 <div id="actionMenu" class="hidden">
   <div id="actionName"></div>
   <button id="actPunch">👊 Đấm</button>
   <button id="actKick">🦶 Đá</button>
+  <button id="actBan" class="hidden">🚫 Mời ra khỏi phòng</button>
 </div>
 <div id="help" class="hidden">WASD: đi · Kéo chuột: xoay · V: góc nhìn · Click sofa: ngồi · Click bi-a/bóng bàn/sàn nhảy/máy gắp thú/máy game: chơi · Click bàn: gọi món · Click người: đấm/đá (hoặc F đấm, G đá) · Enter: chat · Giữ B: nói (10s) · 1-7: biểu cảm</div>
 

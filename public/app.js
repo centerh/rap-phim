@@ -156,6 +156,21 @@ function buildHair(g, style, female, hairM) {
   }
 }
 
+let _heart = null, _star = null;
+function heartGeo() {
+  if (_heart) return _heart;
+  const s = new THREE.Shape(), x = 0, y = 0;
+  s.moveTo(x + 0.25, y + 0.25); s.bezierCurveTo(x + 0.25, y + 0.25, x + 0.2, y, x, y); s.bezierCurveTo(x - 0.3, y, x - 0.3, y + 0.35, x - 0.3, y + 0.35);
+  s.bezierCurveTo(x - 0.3, y + 0.55, x - 0.1, y + 0.77, x + 0.25, y + 0.95); s.bezierCurveTo(x + 0.6, y + 0.77, x + 0.8, y + 0.55, x + 0.8, y + 0.35);
+  s.bezierCurveTo(x + 0.8, y + 0.35, x + 0.8, y, x + 0.5, y); s.bezierCurveTo(x + 0.35, y, x + 0.25, y + 0.25, x + 0.25, y + 0.25);
+  _heart = new THREE.ShapeGeometry(s); _heart.translate(-0.25, -0.47, 0); return _heart;
+}
+function starGeo() {
+  if (_star) return _star;
+  const s = new THREE.Shape();
+  for (let i = 0; i < 10; i++) { const r = i % 2 ? 0.22 : 0.5, a = Math.PI / 2 + (i * Math.PI) / 5; (i ? s.lineTo : s.moveTo).call(s, Math.cos(a) * r, Math.sin(a) * r); }
+  s.closePath(); _star = new THREE.ShapeGeometry(s); return _star;
+}
 function makeAvatar(look) {
   const g = new THREE.Group();
   const mk = (c) => new THREE.MeshLambertMaterial({ color: c });
@@ -219,6 +234,7 @@ function makeAvatar(look) {
     m.position.set(s * 0.25, y, 0.6); m.rotation.set(0, s * 0.35, rot); F(m);
   };
   const sprite = (t, x, y, z) => { const sp = textSprite(t, { size: 70 }); sp.scale.multiplyScalar(0.4); sp.position.set(x, y, z); F(sp); };
+  const shapeMesh = (geo, color, x, y, z, sc) => { const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide })); m.position.set(x, y, z); m.scale.setScalar(sc); return m; };
   function setFace(name) {
     while (face.children.length) face.remove(face.children[0]);
     const strong = name === 'laugh' || name === 'happy';
@@ -247,6 +263,29 @@ function makeAvatar(look) {
       openEye(-1); closedEye(1); brow(-1, 2.08, 0.08); brow(1, 2.12, -0.12);
       arc(0.07, 0.018, 0, mouthY + 0.03, mz, Math.PI);
       sprite('✨', 0.6, 2.5, 0.3);
+    } else if (name === 'love') {
+      for (const s of [-1, 1]) F(shapeMesh(heartGeo(), 0xff3366, s * 0.25, 1.85, 0.66, 0.26));
+      brow(-1, 2.12, 0.1); brow(1, 2.12, -0.1);
+      const dl = new THREE.Mesh(new THREE.CircleGeometry(0.085, 16, Math.PI, Math.PI), redM); dl.position.set(0, mouthY + 0.03, mz - 0.005); F(dl);
+      arc(0.085, 0.02, 0, mouthY + 0.03, mz, Math.PI);
+    } else if (name === 'cool') {
+      const gm = new THREE.MeshBasicMaterial({ color: 0x0d0d12 });
+      for (const s of [-1, 1]) {
+        const l = new THREE.Mesh(new THREE.BoxGeometry(0.29, 0.18, 0.05), gm); l.position.set(s * 0.25, 1.85, 0.64); F(l);
+        const sh = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.025, 0.01), new THREE.MeshBasicMaterial({ color: 0x9fd8ff })); sh.position.set(s * 0.25 - 0.06, 1.89, 0.67); F(sh);
+      }
+      const br = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.035, 0.05), gm); br.position.set(0, 1.87, 0.65); F(br);
+      brow(-1, 2.12, 0.05); brow(1, 2.16, -0.2);
+      arc(0.06, 0.016, 0.03, mouthY + 0.03, mz, Math.PI);
+    } else if (name === 'star') {
+      for (const s of [-1, 1]) F(shapeMesh(starGeo(), 0xffd400, s * 0.25, 1.85, 0.66, 0.2));
+      brow(-1, 2.16, 0.1); brow(1, 2.16, -0.1);
+      const ds = new THREE.Mesh(new THREE.CircleGeometry(0.1, 16, Math.PI, Math.PI), redM); ds.position.set(0, mouthY + 0.04, mz - 0.005); F(ds);
+      arc(0.1, 0.02, 0, mouthY + 0.04, mz, Math.PI);
+    } else if (name === 'kiss') {
+      closedEye(-1); closedEye(1); brow(-1, 2.1, 0.1); brow(1, 2.1, -0.1);
+      ell(0.045, 0, mouthY + 0.01, mz - 0.003, 1.2, 1, 0.4, new THREE.MeshBasicMaterial({ color: 0xe85d75 }));
+      F(shapeMesh(heartGeo(), 0xff5c8a, 0.52, 1.98, 0.6, 0.2));
     } else { // laugh
       closedEye(-1); closedEye(1); brow(-1, 2.12, 0.12); brow(1, 2.12, -0.12);
       const d = new THREE.Mesh(new THREE.CircleGeometry(0.13, 20, Math.PI, Math.PI), redM); d.position.set(0, mouthY + 0.06, mz - 0.005); F(d);
@@ -305,13 +344,17 @@ function makeAvatar(look) {
     if (!ud.dance) { armL.rotation.z = 0; armR.rotation.z = 0; legL.rotation.z = 0; legR.rotation.z = 0; }
     if (ud.dance) { // nhảy Audition
       ud.dt = (ud.dt || 0) + dt;
-      const ph = ud.dt * Math.PI * 4, sn = Math.sin(ph), mv = Math.floor(ud.dt / 4) % 4;
+      const ph = ud.dt * Math.PI * 4, sn = Math.sin(ph), mv = Math.floor(ud.dt / 4) % (ud.vip ? 8 : 4);
       armL.rotation.set(0, 0, 0); armR.rotation.set(0, 0, 0); legL.rotation.set(0, 0, 0); legR.rotation.set(0, 0, 0);
       if (mv === 0) { armR.rotation.z = 2.4 + 0.3 * sn; armL.rotation.z = -0.4; legR.rotation.x = -0.7 * Math.max(0, sn); }
       else if (mv === 1) { armL.rotation.z = -(sn > 0 ? 2.4 : 0.7); armR.rotation.z = sn > 0 ? 0.7 : 2.4; legL.rotation.x = -0.5 * sn; legR.rotation.x = 0.5 * sn; }
       else if (mv === 2) { armL.rotation.z = -2.7; armR.rotation.z = 2.7; legL.rotation.z = -0.25; legR.rotation.z = 0.25; }
-      else { armL.rotation.x = -1.3 * Math.abs(sn); armR.rotation.x = -1.3 * Math.abs(Math.cos(ph)); legL.rotation.z = -0.3 * Math.max(0, sn); legR.rotation.z = 0.3 * Math.max(0, -sn); }
-      g.userData.bob = Math.abs(sn) * (mv === 2 ? 0.3 : 0.14);
+      else if (mv === 3) { armL.rotation.x = -1.3 * Math.abs(sn); armR.rotation.x = -1.3 * Math.abs(Math.cos(ph)); legL.rotation.z = -0.3 * Math.max(0, sn); legR.rotation.z = 0.3 * Math.max(0, -sn); }
+      else if (mv === 4) { armL.rotation.z = -1.5; armR.rotation.z = 1.5; g.rotation.y += dt * 6; legL.rotation.x = -0.4 * sn; legR.rotation.x = 0.4 * sn; }
+      else if (mv === 5) { armL.rotation.x = -1.57 * (sn > 0 ? 1 : 0.1); armR.rotation.x = -1.57 * (sn > 0 ? 0.1 : 1); legL.rotation.x = -0.2 * sn; legR.rotation.x = 0.2 * sn; }
+      else if (mv === 6) { armL.rotation.z = -(1.6 + 0.9 * sn); armR.rotation.z = 1.6 + 0.9 * Math.sin(ph + Math.PI); legL.rotation.x = -0.5 * sn; legR.rotation.x = 0.5 * sn; }
+      else { armL.rotation.z = -2.6; armR.rotation.z = 2.6; legL.rotation.z = -0.5; legR.rotation.z = 0.5; }
+      g.userData.bob = Math.abs(sn) * (mv === 2 ? 0.3 : mv === 7 ? 0.5 : 0.14);
       g.rotation.y += Math.sin(ph / 2) * dt * 0.8;
       return;
     }
@@ -974,11 +1017,11 @@ function addPlayer(p) {
   group.userData.pid = p.id;
   group.userData.dance = !!p.dance;
   if (p.dance) { dancers.add(p.id); setTimeout(refreshMusic, 0); }
-  const label = textSprite(p.name, { size: 44, bg: 'rgba(0,0,0,.45)' });
-  label.position.set(0, 3.4, 0);
+  const label = makeNameLabel(p.name, false);
   group.add(label);
   scene.add(group);
-  players.set(p.id, { group, label, bubble: null, target: { x: p.x, z: p.z, ry: p.ry || 0 }, moving: false, name: p.name });
+  players.set(p.id, { group, label, bubble: null, target: { x: p.x, z: p.z, ry: p.ry || 0 }, moving: false, name: p.name, vip: false, auraMesh: null });
+  applyVipLook(players.get(p.id), !!p.vip, !!p.aura);
 }
 function removePlayer(id) {
   const p = players.get(id);
@@ -988,7 +1031,7 @@ function removePlayer(id) {
   dancers.delete(id); refreshMusic();
 }
 // bong bóng chat nhiều dòng: hiện đủ nội dung, tự xuống dòng
-function bubbleSprite(text) {
+function bubbleSprite(text, vip) {
   const size = 38, maxW = 560, pad = 22, lh = size * 1.25;
   const c = document.createElement('canvas'), ctx = c.getContext('2d');
   ctx.font = `bold ${size}px sans-serif`;
@@ -1013,8 +1056,9 @@ function bubbleSprite(text) {
   const h = lines.length * lh + pad * 2 - 6;
   c.width = Math.ceil(w); c.height = Math.ceil(h) + 14;
   ctx.font = `bold ${size}px sans-serif`;
-  ctx.fillStyle = 'rgba(255,255,255,.92)';
+  ctx.fillStyle = vip ? 'rgba(255,246,214,.96)' : 'rgba(255,255,255,.92)';
   ctx.beginPath(); ctx.roundRect(0, 0, c.width, c.height - 14, 22); ctx.fill();
+  if (vip) { ctx.strokeStyle = '#e0a800'; ctx.lineWidth = 6; ctx.stroke(); }
   ctx.beginPath(); ctx.moveTo(c.width / 2 - 14, c.height - 14); ctx.lineTo(c.width / 2, c.height - 1); ctx.lineTo(c.width / 2 + 14, c.height - 14); ctx.fill();
   ctx.fillStyle = '#111'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   lines.forEach((l, i) => ctx.fillText(l, c.width / 2, pad + lh * i + lh / 2 - 3));
@@ -1027,15 +1071,16 @@ function bubbleSprite(text) {
 function showBubble(id, text) {  const p = players.get(id);
   if (!p) return;
   if (p.bubble) { p.group.remove(p.bubble); clearTimeout(p.bubbleT); }
-  const b = bubbleSprite(text);
+  const b = bubbleSprite(text, p.vip);
   b.position.set(0, 3.8, 0);
   p.group.add(b); p.bubble = b;
   p.bubbleT = setTimeout(() => { p.group.remove(b); if (p.bubble === b) p.bubble = null; }, Math.min(16000, 6000 + text.length * 60));
 }
 
 /* ---------------- Networking ---------------- */
-socket.on('init', ({ id, players: list, video, tables, chat, pool, pp, clawState, poolSeats: ps, arcCounts, theme, locked, isOwner: own }) => {
-  roomLocked = !!locked; isOwner = !!own;
+socket.on('init', ({ id, players: list, video, tables, chat, pool, pp, clawState, poolSeats: ps, arcCounts, theme, locked, isOwner: own, videoLock: vlock }) => {
+  roomLocked = !!locked; isOwner = !!own; videoLock = !!vlock;
+  setTimeout(afterVipChange, 0);
   if (pendingRoomPw && own) { socket.emit('room-pw-set', { pw: pendingRoomPw }); }
   pendingRoomPw = null;
   for (const [slot, data] of Object.entries(theme || {})) { themeData[slot] = data; applyTheme(slot, data); }
@@ -1044,7 +1089,7 @@ socket.on('init', ({ id, players: list, video, tables, chat, pool, pp, clawState
   if (clawState && game.claw) { Object.assign(game.claw.s, clawState); game.claw.t = Object.assign({}, clawState); game.claw.prevHold = clawState.hold; }
   if (pool) applyPool(pool);
   if (pp) { ppNames = { A: pp.A, B: pp.B }; ppIds = pp.ids || {}; ppScore = pp.score; drawBoard(pp.A, pp.B, pp.score); }
-  for (const m of chat || []) addChat(m.name, m.text, false, true, m.ts);
+  for (const m of chat || []) addChat(m.name, m.text, false, true, m.ts, m.vip);
   myId = id;
   for (const p of list) addPlayer(p);
   const mine = players.get(id);
@@ -1064,19 +1109,19 @@ socket.on('player-move', (m) => {
   p.target = { x: m.x, z: m.z, ry: m.ry }; p.moving = m.moving;
 });
 socket.on('count', (n) => { lastCount = n; $('count').textContent = '👥 ' + n + ' · phòng: ' + currentRoom; });
-socket.on('chat', ({ id, name, text, ts }) => { addChat(name, text, false, false, ts); showBubble(id, text); });
+socket.on('chat', ({ id, name, text, ts, vip }) => { addChat(name, text, false, false, ts, vip); showBubble(id, text); });
 socket.on('video', (v) => { pendingVideo = v; applyPending(); });
 
 /* ---------------- Chat (mờ, góc dưới trái) ---------------- */
 const chatHistory = [];
 let histPinned = false;
 function fmtTime(ts) { const d = new Date(ts || Date.now()); return d.toTimeString().slice(0, 5); }
-function makeMsgEl(name, text, system, ts, withTime) {
+function makeMsgEl(name, text, system, ts, withTime, vip) {
   const el = document.createElement('div');
-  el.className = 'msg';
+  el.className = 'msg' + (vip ? ' vip' : '');
   if (withTime) { const tm = document.createElement('small'); tm.textContent = fmtTime(ts) + ' '; tm.style.opacity = .6; el.append(tm); }
   if (system) { el.style.fontStyle = 'italic'; el.append(document.createTextNode(text)); }
-  else { const b = document.createElement('b'); b.textContent = name + ':'; el.append(b, document.createTextNode(text)); }
+  else { const b = document.createElement('b'); b.textContent = (vip ? '👑 ' : '') + name + ':'; el.append(b, document.createTextNode(text)); }
   return el;
 }
 function refreshHistory() {
@@ -1085,16 +1130,16 @@ function refreshHistory() {
   $('log').classList.toggle('hidden', show);
   if (show) $('history').scrollTop = $('history').scrollHeight;
 }
-function addChat(name, text, system = false, quiet = false, ts = Date.now()) {
+function addChat(name, text, system = false, quiet = false, ts = Date.now(), vip = false) {
   chatHistory.push({ name, text, system, ts });
   if (chatHistory.length > 300) chatHistory.shift();
   const h = $('history');
   const stick = h.scrollTop + h.clientHeight >= h.scrollHeight - 30;
-  h.appendChild(makeMsgEl(name, text, system, ts, true));
+  h.appendChild(makeMsgEl(name, text, system, ts, true, vip));
   while (h.children.length > 300) h.firstChild.remove();
   if (stick || chatting) h.scrollTop = h.scrollHeight;
   if (quiet) return;
-  const el = makeMsgEl(name, text, system, ts, false);
+  const el = makeMsgEl(name, text, system, ts, false, vip);
   const log = $('log');
   log.appendChild(el);
   while (log.children.length > 12) log.firstChild.remove();
@@ -1235,6 +1280,7 @@ $('enter').onclick = async () => {
   try {
     const r = await fetch('/api/room-check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ room, password: $('roomPw').value, uid: myUid }) });
     const j = await r.json();
+    if (j.banned) { $('lobbyErr').textContent = '🚫 Bạn đã bị mời ra khỏi phòng này — thử lại sau 10 phút'; return; }
     if (!j.ok) { $('lobbyErr').textContent = '🔒 Phòng này có mật khẩu — hãy nhập đúng mật khẩu rồi bấm lại'; $('roomPw').focus(); return; }
     pendingRoomPw = !j.exists && pw ? pw : null; // phòng mới + có nhập mật khẩu -> đặt mật khẩu cho phòng ngay khi tạo
   } catch (e) { /* không kiểm tra được thì để máy chủ quyết định */ }
@@ -1363,6 +1409,7 @@ function openActionMenu(pid, x, y) {
   const p = players.get(pid);
   if (!p) return;
   actionTarget = pid;
+  $('actBan').classList.toggle('hidden', !isVip);
   $('actionName').textContent = p.name;
   actionMenu.style.left = Math.min(x, innerWidth - 170) + 'px';
   actionMenu.style.top = Math.min(y, innerHeight - 140) + 'px';
@@ -1538,8 +1585,9 @@ emoteBar.innerHTML = FACE_LIST.map(([k, e, n], i) => `<button data-f="${k}" titl
 emoteBar.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) socket.emit('face', b.dataset.f); });
 addEventListener('keydown', (e) => {
   if (inLobby || chatting || menuOpen || e.repeat) return;
-  const n = parseInt(e.key, 10);
-  if (n >= 1 && n <= FACE_LIST.length) socket.emit('face', FACE_LIST[n - 1][0]);
+  const idx = ({ '1': 0, '2': 1, '3': 2, '4': 3, '5': 4, '6': 5, '7': 6, '8': 7, '9': 8, '0': 9, '-': 10 })[e.key];
+  const all = isVip ? FACE_LIST.concat(VIP_FACES) : FACE_LIST;
+  if (idx !== undefined && all[idx]) socket.emit('face', all[idx][0]);
 });
 socket.on('face', ({ id, face }) => { const p = players.get(id); if (p) p.group.userData.setFace(face); });
 
@@ -1892,7 +1940,7 @@ function refreshVipUi() {
   $('vipOut').classList.toggle('hidden', !isVip);
   $('vipMsg').textContent = isAdmin ? '✅ Bạn là ADMIN (đồng thời là VIP)' : isVip ? '✅ Bạn là VIP — có thể đổi giao diện phòng' : 'Chưa đăng nhập VIP';
   $('pwNote').textContent = roomLocked ? '🔒 Phòng hiện đang có mật khẩu' : '🔓 Phòng hiện không có mật khẩu';
-  renderThemeSlots();
+  renderThemeSlots(); afterVipChange();
 }
 function openVip() { vipOpen = true; menuOpen = true; for (const k in keys) keys[k] = false; vipModal.classList.remove('hidden'); refreshVipUi(); }
 function closeVip() { vipOpen = false; menuOpen = false; vipModal.classList.add('hidden'); }
@@ -1925,7 +1973,7 @@ socket.on('vip-codes', (list) => {
 });
 $('vipGen').onclick = () => { socket.emit('vip-gen', { label: $('vipLabel').value.trim() }); $('vipLabel').value = ''; };
 $('pwSet').onclick = () => { socket.emit('room-pw-set', { pw: $('pwNew').value }); $('pwNew').value = ''; };
-socket.on('room-info', (s) => { roomLocked = !!s.locked; if (vipOpen) refreshVipUi(); });
+socket.on('room-info', (s) => { roomLocked = !!s.locked; videoLock = !!s.videoLock; afterVipChange(); if (vipOpen) refreshVipUi(); });
 socket.on('theme', ({ slot, data }) => { if (data) themeData[slot] = data; else delete themeData[slot]; applyTheme(slot, data); if (vipOpen) renderThemeSlots(); });
 $('themeResetAll').onclick = () => socket.emit('theme-reset-all');
 $('themeSlots').addEventListener('click', (e) => {
@@ -1950,7 +1998,7 @@ $('themeSlots').addEventListener('click', (e) => {
   };
   inp.click();
 });
-socket.on('join-denied', () => { alert('Sai mật khẩu phòng!'); location.reload(); });
+socket.on('join-denied', ({ reason } = {}) => { alert(reason === 'ban' ? 'Bạn đã bị mời ra khỏi phòng này, hãy thử lại sau 10 phút.' : 'Sai mật khẩu phòng!'); location.href = location.pathname; });
 
 // rời phòng -> quay về phòng chờ (màn hình tạo nhân vật + danh sách phòng) để vào phòng khác
 $('leaveBtn').onclick = () => {
@@ -1959,6 +2007,131 @@ $('leaveBtn').onclick = () => {
   socket.disconnect();
   location.href = location.pathname;
 };
+
+/* ---------------- Đặc quyền VIP: hiệu ứng, hào quang, đá người, khoá video, bộ giao diện, biểu cảm riêng ---------------- */
+const VIP_FACES = [['love', '😍', 'Mê mẩn'], ['cool', '😎', 'Ngầu'], ['star', '🤩', 'Choáng ngợp'], ['kiss', '😘', 'Hôn gió']];
+let myAura = false, videoLock = false;
+function renderEmoteBar() {
+  const all = isVip ? FACE_LIST.concat(VIP_FACES) : FACE_LIST;
+  const ks = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-'];
+  emoteBar.innerHTML = all.map(([k, e, n], i) => `<button data-f="${k}" title="${ks[i]}: ${n}${i >= 7 ? ' (VIP)' : ''}">${e}</button>`).join('');
+}
+function applyVideoLockUi() {
+  const lock = videoLock && !isVip;
+  for (const id of ['ytUrl', 'ytGo', 'playBtn']) $(id).disabled = lock;
+  $('ytUrl').placeholder = lock ? '🔒 Video đang được khoá bởi VIP' : 'Dán link YouTube rồi bấm Phát...';
+}
+function afterVipChange() {
+  $('vipBar').classList.toggle('hidden', !isVip);
+  $('vipExtra').classList.toggle('hidden', !isVip);
+  $('videoLockChk').checked = videoLock;
+  $('auraBtn').classList.toggle('on', myAura);
+  renderEmoteBar(); applyVideoLockUi();
+}
+// nhãn tên + hào quang
+function makeNameLabel(name, vip) {
+  const l = vip ? textSprite('👑 ' + name, { size: 44, bg: 'rgba(90,60,0,.7)', color: '#ffd34d' }) : textSprite(name, { size: 44, bg: 'rgba(0,0,0,.45)' });
+  l.position.set(0, 3.4, 0); return l;
+}
+function applyVipLook(pl, vip, aura) {
+  if (pl.vip !== vip) {
+    pl.group.remove(pl.label); pl.label = makeNameLabel(pl.name, vip); pl.group.add(pl.label);
+    pl.vip = vip; pl.group.userData.vip = vip;
+  }
+  if (aura && vip && !pl.auraMesh) {
+    const g = new THREE.Group(), mat = (c, o) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false });
+    const r1 = new THREE.Mesh(new THREE.RingGeometry(0.78, 1.0, 48), mat(0xffd34d, 0.9)); r1.rotation.x = -Math.PI / 2; r1.position.y = 0.05;
+    const r2 = new THREE.Mesh(new THREE.RingGeometry(1.1, 1.22, 48), mat(0xffe9a0, 0.4)); r2.rotation.x = -Math.PI / 2; r2.position.y = 0.05;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 3.2, 28, 1, true), mat(0xffd34d, 0.12)); beam.position.y = 1.6;
+    g.add(r1, r2, beam); pl.group.add(g); pl.auraMesh = g;
+  } else if ((!aura || !vip) && pl.auraMesh) { pl.group.remove(pl.auraMesh); pl.auraMesh = null; }
+}
+socket.on('player-vip', ({ id, vip, aura }) => {
+  const pl = players.get(id); if (!pl) return;
+  applyVipLook(pl, !!vip, !!aura);
+  if (id === myId) { myAura = !!aura; afterVipChange(); }
+});
+// hiệu ứng hạt 3D: pháo hoa / hoa giấy / thả tim
+const vfx = [];
+let heartTex = null;
+function spawnVipFx(type, pos) {
+  const n = type === 'fireworks' ? 170 : type === 'confetti' ? 150 : 36;
+  const P = new Float32Array(n * 3), C = new Float32Array(n * 3), V = new Float32Array(n * 3), col = new THREE.Color();
+  const oy = pos.y + (type === 'fireworks' ? 5.2 : 3.0);
+  for (let i = 0; i < n; i++) {
+    P[i * 3] = pos.x; P[i * 3 + 1] = oy; P[i * 3 + 2] = pos.z;
+    if (type === 'fireworks') {
+      const a = Math.random() * 6.283, b = Math.acos(2 * Math.random() - 1), s = 2.5 + Math.random() * 3.5;
+      V[i * 3] = Math.sin(b) * Math.cos(a) * s; V[i * 3 + 1] = Math.cos(b) * s; V[i * 3 + 2] = Math.sin(b) * Math.sin(a) * s;
+      col.setHSL((Math.floor(i / 28) * 0.17 + Math.random() * 0.05) % 1, 1, 0.6);
+    } else if (type === 'confetti') {
+      V[i * 3] = (Math.random() - 0.5) * 5; V[i * 3 + 1] = 3 + Math.random() * 4; V[i * 3 + 2] = (Math.random() - 0.5) * 5;
+      col.setHSL(Math.random(), 0.95, 0.58);
+    } else {
+      V[i * 3] = (Math.random() - 0.5) * 1.6; V[i * 3 + 1] = 1.2 + Math.random() * 2; V[i * 3 + 2] = (Math.random() - 0.5) * 1.6;
+      col.setRGB(1, 1, 1);
+    }
+    C[i * 3] = col.r; C[i * 3 + 1] = col.g; C[i * 3 + 2] = col.b;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(P, 3)); geo.setAttribute('color', new THREE.BufferAttribute(C, 3));
+  if (type === 'hearts' && !heartTex) heartTex = bannerTexture(64, 64, (ctx) => { ctx.font = '52px "Segoe UI Emoji", "Apple Color Emoji", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('💖', 32, 36); });
+  const mat = new THREE.PointsMaterial({ size: type === 'fireworks' ? 0.24 : type === 'confetti' ? 0.2 : 0.6, vertexColors: type !== 'hearts', map: type === 'hearts' ? heartTex : null, transparent: true, depthWrite: false, alphaTest: 0.01, sizeAttenuation: true });
+  const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; scene.add(pts);
+  vfx.push({ pts, V, n, t: 0, max: type === 'hearts' ? 3 : 2.6, grav: type === 'fireworks' ? 4.5 : type === 'confetti' ? 5 : -0.2 });
+}
+function updateVipFx(dt, now) {
+  for (let i = vfx.length - 1; i >= 0; i--) {
+    const f = vfx[i]; f.t += dt;
+    const pos = f.pts.geometry.attributes.position, a = pos.array, V = f.V;
+    for (let k = 0; k < f.n; k++) { V[k * 3 + 1] -= f.grav * dt; a[k * 3] += V[k * 3] * dt; a[k * 3 + 1] += V[k * 3 + 1] * dt; a[k * 3 + 2] += V[k * 3 + 2] * dt; }
+    pos.needsUpdate = true; f.pts.material.opacity = Math.max(0, 1 - Math.pow(f.t / f.max, 2));
+    if (f.t >= f.max) { scene.remove(f.pts); f.pts.geometry.dispose(); f.pts.material.dispose(); vfx.splice(i, 1); }
+  }
+  for (const pl of players.values()) if (pl.auraMesh) { pl.auraMesh.children[0].rotation.z += dt * 2; const s = 1 + Math.sin(now / 300) * 0.06; pl.auraMesh.scale.set(s, 1, s); }
+}
+socket.on('vip-fx', ({ id, type }) => {
+  const pl = players.get(id); if (!pl) return;
+  spawnVipFx(type, pl.group.position);
+  if (type === 'fireworks') setTimeout(() => { const q = players.get(id); if (q) spawnVipFx(type, { x: q.group.position.x + 1.6, y: q.group.position.y, z: q.group.position.z - 0.8 }); }, 350);
+});
+addEventListener('keydown', (e) => {
+  if (!isVip || inLobby || chatting || menuOpen || e.repeat || e.ctrlKey || e.metaKey) return;
+  const t = ({ z: 'fireworks', x: 'confetti', c: 'hearts' })[e.key.toLowerCase()];
+  if (t) socket.emit('vip-fx', { type: t });
+});
+$('vipBar').addEventListener('click', (e) => { const b = e.target.closest('button[data-fx]'); if (b) socket.emit('vip-fx', { type: b.dataset.fx }); });
+$('auraBtn').onclick = () => socket.emit('vip-aura', { on: !myAura });
+// thông báo VIP vào phòng
+socket.on('vip-join', ({ id, name }) => {
+  const b = document.createElement('div'); b.className = 'vip-banner'; b.textContent = `👑 VIP ${name} vừa vào rạp!`;
+  document.body.appendChild(b); setTimeout(() => b.remove(), 5200);
+  addChat('', `👑 VIP ${name} vừa vào rạp!`, true);
+  const pl = players.get(id); if (pl) spawnVipFx('confetti', pl.group.position);
+});
+// đá người ra khỏi phòng
+$('actBan').onclick = () => {
+  const t = actionTarget; closeActionMenu();
+  if (t && confirm('Mời người này ra khỏi phòng? (họ bị cấm vào lại phòng trong 10 phút)')) socket.emit('kick', { target: t });
+};
+socket.on('kicked', ({ by }) => { alert(`🚫 ${by} đã mời bạn ra khỏi phòng. Bạn có thể vào lại sau 10 phút.`); location.href = location.pathname; });
+// khoá video
+$('videoLockChk').onchange = () => socket.emit('video-lock', { on: $('videoLockChk').checked });
+// bộ giao diện đã lưu
+function renderPresets(list) {
+  const box = $('presetList'); box.innerHTML = '';
+  if (!list.length) { box.innerHTML = '<span class="muted">Chưa lưu bộ nào (tối đa 4)</span>'; return; }
+  for (const n of list) {
+    const row = document.createElement('div'); row.className = 'vcode';
+    const nm = document.createElement('span'); nm.textContent = '🖼️ ' + n; nm.style.color = '#fff';
+    const ap = document.createElement('button'); ap.textContent = 'Áp dụng'; ap.onclick = () => socket.emit('preset-load', { name: n });
+    const dl = document.createElement('button'); dl.textContent = '✖'; dl.onclick = () => { if (confirm('Xoá bộ "' + n + '"?')) socket.emit('preset-del', { name: n }); };
+    row.append(nm, ap, dl); box.appendChild(row);
+  }
+}
+socket.on('presets', ({ list }) => renderPresets(list));
+$('presetSave').onclick = () => { const n = $('presetName').value.trim(); if (n) { socket.emit('preset-save', { name: n }); $('presetName').value = ''; } };
+$('presetName').addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') $('presetSave').click(); });
 
 /* ---------------- Main loop ---------------- */
 let last = 0, sendT = 0, lastSent = '';
@@ -2075,6 +2248,7 @@ function loop(now) {
     p.label.visible = !poolMode; if (p.bubble) p.bubble.visible = !poolMode;
   }
   const tsec = now / 1000;
+  updateVipFx(dt, now);
   updateGameVisuals(dt, now);
   for (const tr of trophies) tr.rotation.y += dt * 0.7;
   for (const b of beams) b.g.rotation.z = b.base + Math.sin(tsec * 0.6 + b.ph) * 0.12;

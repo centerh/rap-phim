@@ -22,7 +22,7 @@ app.post('/api/room-check', (req, res) => {
   const b = req.body || {};
   const name = String(b.room || '').slice(0, 30).replace(/[^\w-]/g, '').toLowerCase() || 'main';
   const meta = store.rooms[name];
-  res.json({ ok: pwOk(meta, b.password, b.uid), exists: rooms.has(name) || !!(meta && meta.pw), locked: !!(meta && meta.pw) });
+  res.json({ banned: isBanned(name, b.uid), ok: !isBanned(name, b.uid) && pwOk(meta, b.password, b.uid), exists: rooms.has(name) || !!(meta && meta.pw), locked: !!(meta && meta.pw) });
 });
 
 /* ---------- Lưu trữ: mã VIP, mật khẩu phòng, giao diện phòng (data/meta.json, KHÔNG đưa lên git) ---------- */
@@ -64,6 +64,13 @@ function pwOk(meta, pw, uid) {
   if (uid && meta.owner && meta.owner === uid) return true;
   try { return safeEq(pwHash(pw || '', meta.pw.salt), meta.pw.hash); } catch (e) { return false; }
 }
+const bans = {}; // tên phòng -> { uid: thời điểm hết hạn cấm }
+function isBanned(name, uid) {
+  const b = bans[name];
+  if (!b || !uid) return false;
+  if (b[uid] && b[uid] > Date.now()) return true;
+  delete b[uid]; return false;
+}
 const THEME_SLOTS = ['floor', 'wallL', 'wallR', 'wallBack', 'ceiling', 'flagL', 'flagR', 'title'];
 const IMG_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 
@@ -73,7 +80,9 @@ function getRoom(name) {
   if (!rooms.has(name)) rooms.set(name, { players: new Map(), chat: [], seats: new Map(), tables: {}, claw: { by: null, state: null }, poolSeats: { A: null, B: null, turn: 'A' }, arc: {}, pool: newPool(), pp: { A: null, B: null, score: [0, 0], chain: 0, rally: 0, running: false, hitAt: { A: 0, B: 0 } }, video: { id: 'dQw4w9WgXcQ', time: 0, playing: false, ts: Date.now() } });
   return rooms.get(name);
 }
-const FACES = ['happy', 'normal', 'surprised', 'sad', 'angry', 'wink', 'laugh'];
+const BASE_FACES = ['happy', 'normal', 'surprised', 'sad', 'angry', 'wink', 'laugh'];
+const VIP_FACES = ['love', 'cool', 'star', 'kiss'];
+const FACES = [...BASE_FACES, ...VIP_FACES];
 const ITEM_KEYS = ['popcorn', 'caramel', 'coke', 'pepsi', 'orange', 'peach', 'milktea', 'water'];
 function freeSeats(room, id) {
   for (const [s, o] of room.seats) if (o === id) room.seats.delete(s);
@@ -262,9 +271,10 @@ io.on('connection', (socket) => {
     const cid = clean(data.cid, 40);
     roomName = clean(r, 30).replace(/[^\w-]/g, '').toLowerCase() || 'main';
     const meta0 = store.rooms[roomName];
+    if (isBanned(roomName, clean(data.uid, 40))) return socket.emit('join-denied', { reason: 'ban' });
     if (!pwOk(meta0, data.password, clean(data.uid, 40))) return socket.emit('join-denied', { reason: 'pw' });
     if (!rooms.has(roomName) && !(meta0 && meta0.pw)) { store.rooms[roomName] = { pw: null, owner: clean(data.uid, 40) || null, theme: meta0 ? meta0.theme || {} : {} }; saveStore(); } // phòng mới (hoặc phòng trống không mật khẩu): người vào đầu là chủ phòng
-    socket.data.uid = clean(data.uid, 40);
+    socket.data.uid = clean(data.uid, 40); socket.data.room = roomName;
     room = getRoom(roomName);
     // cùng 1 tab vào lại -> xoá nhân vật cũ
     if (cid) {
@@ -289,7 +299,7 @@ io.on('connection', (socket) => {
         hair: clean(look && look.hair, 9),
         gender: look && look.gender === 'female' ? 'female' : 'male',
         hairStyle: Math.min(5, Math.max(1, (look && look.hairStyle | 0) || 1)),
-        face: FACES.includes(look && look.face) ? look.face : 'normal',
+        face: BASE_FACES.includes(look && look.face) ? look.face : 'normal',
         jersey: ['blg', 'geng'].includes(look && look.jersey) ? look.jersey : '',
         texture: look && typeof look.texture === 'string' && look.texture.startsWith('data:image/') && look.texture.length < 600000 ? look.texture : null,
       },
@@ -297,7 +307,7 @@ io.on('connection', (socket) => {
     };
     room.players.set(socket.id, p);
     socket.emit('init', { id: socket.id, players: [...room.players.values()], video: currentVideo(room.video), tables: room.tables, chat: room.chat, pool: { balls: poolPublic(room.pool), moving: room.pool.moving }, pp: ppPublic(room), clawState: room.claw.state, poolSeats: poolSeatsPublic(room), arcCounts: arcCounts(room),
-      theme: (store.rooms[roomName] || {}).theme || {}, locked: !!(store.rooms[roomName] && store.rooms[roomName].pw), isOwner: !!(store.rooms[roomName] && store.rooms[roomName].owner && store.rooms[roomName].owner === socket.data.uid) });
+      theme: (store.rooms[roomName] || {}).theme || {}, videoLock: !!(store.rooms[roomName] && store.rooms[roomName].videoLock), locked: !!(store.rooms[roomName] && store.rooms[roomName].pw), isOwner: !!(store.rooms[roomName] && store.rooms[roomName].owner && store.rooms[roomName].owner === socket.data.uid) });
     socket.to(roomName).emit('player-join', p);
     io.to(roomName).emit('count', room.players.size);
   });
@@ -315,7 +325,7 @@ io.on('connection', (socket) => {
     const p = room.players.get(socket.id);
     const t = clean(text, 200).trim();
     if (!p || !t) return;
-    const msg = { id: socket.id, name: p.name, text: t, ts: Date.now() };
+    const msg = { id: socket.id, name: p.name, text: t, ts: Date.now(), vip: !!p.vip };
     room.chat.push(msg); if (room.chat.length > 50) room.chat.shift();
     io.to(roomName).emit('chat', msg);
   });
@@ -334,6 +344,7 @@ io.on('connection', (socket) => {
 
   socket.on('face', (f) => {
     if (!room || !FACES.includes(f)) return;
+    if (VIP_FACES.includes(f) && !socket.vip) return;
     const p = room.players.get(socket.id);
     if (!p) return;
     p.look.face = f;
@@ -371,6 +382,13 @@ io.on('connection', (socket) => {
     const lv = codeLevel(code);
     socket.vip = lv >= 1; socket.admin = lv === 2; socket.vipCode = lv ? String(code).trim() : null;
     socket.emit('vip-status', { vip: socket.vip, admin: socket.admin, error: lv ? null : 'Mã không đúng' });
+    const pl = room && room.players.get(socket.id);
+    if (pl) {
+      const was = !!pl.vip; pl.vip = socket.vip; if (!pl.vip) pl.aura = false;
+      io.to(roomName).emit('player-vip', { id: socket.id, vip: pl.vip, aura: !!pl.aura });
+      if (pl.vip && !was && !socket.announced) { socket.announced = true; io.to(roomName).emit('vip-join', { id: socket.id, name: pl.name }); }
+      if (pl.vip) pushPresets(socket);
+    }
     if (socket.admin) socket.emit('vip-codes', listCodes());
   });
   socket.on('vip-gen', ({ label } = {}) => {
@@ -383,9 +401,66 @@ io.on('connection', (socket) => {
   socket.on('vip-revoke', ({ code } = {}) => {
     if (!socket.admin || !store.codes[code]) return;
     delete store.codes[code]; saveStore();
-    for (const s of io.sockets.sockets.values()) if (s.vipCode === code && !s.admin) { s.vip = false; s.emit('vip-status', { vip: false, admin: false, error: 'Mã VIP của bạn đã bị thu hồi' }); }
+    for (const s of io.sockets.sockets.values()) if (s.vipCode === code && !s.admin) { s.vip = false; s.emit('vip-status', { vip: false, admin: false, error: 'Mã VIP của bạn đã bị thu hồi' }); const rm = rooms.get(s.data.room), pl2 = rm && rm.players.get(s.id); if (pl2) { pl2.vip = false; pl2.aura = false; io.to(s.data.room).emit('player-vip', { id: s.id, vip: false, aura: false }); } }
     socket.emit('vip-codes', listCodes());
   });
+  /* ----- Đặc quyền VIP: khoá video, đá người, hiệu ứng, hào quang, bộ giao diện đã lưu ----- */
+  socket.on('video-lock', ({ on } = {}) => {
+    if (!room || !socket.vip) return;
+    const meta = store.rooms[roomName] || (store.rooms[roomName] = { pw: null, owner: null, theme: {} });
+    meta.videoLock = !!on; saveStore();
+    io.to(roomName).emit('room-info', { locked: !!meta.pw, videoLock: !!meta.videoLock });
+    io.to(roomName).emit('pool-event', { text: meta.videoLock ? '🔒 VIP đã khoá điều khiển video (chỉ VIP mới điều khiển)' : '🔓 VIP đã mở khoá điều khiển video cho mọi người' });
+  });
+  socket.on('kick', ({ target } = {}) => {
+    if (!room || !socket.vip || target === socket.id) return;
+    const tp = room.players.get(target), ts = io.sockets.sockets.get(target);
+    if (!tp || !ts) return;
+    if (ts.vip && !socket.admin) return socket.emit('pool-event', { text: 'Không thể đá một VIP khác' });
+    const b = bans[roomName] || (bans[roomName] = {});
+    if (ts.data.uid) b[ts.data.uid] = Date.now() + 10 * 60000;
+    io.to(roomName).emit('pool-event', { text: `🚫 ${tp.name} đã bị mời ra khỏi phòng` });
+    ts.emit('kicked', { by: (room.players.get(socket.id) || {}).name || 'VIP' });
+    setTimeout(() => ts.disconnect(true), 300);
+  });
+  let lastFx = 0;
+  socket.on('vip-fx', ({ type } = {}) => {
+    if (!room || !socket.vip || !['fireworks', 'confetti', 'hearts'].includes(type)) return;
+    const n = Date.now(); if (n - lastFx < 700) return; lastFx = n;
+    io.to(roomName).emit('vip-fx', { id: socket.id, type });
+  });
+  socket.on('vip-aura', ({ on } = {}) => {
+    if (!room || !socket.vip) return;
+    const pl = room.players.get(socket.id); if (!pl) return;
+    pl.aura = !!on;
+    io.to(roomName).emit('player-vip', { id: socket.id, vip: true, aura: pl.aura });
+  });
+  const presetNames = () => Object.keys((store.rooms[roomName] && store.rooms[roomName].presets) || {});
+  function pushPresets(s) { s.emit('presets', { list: presetNames() }); }
+  const pushPresetsAll = () => { for (const sid of io.sockets.adapter.rooms.get(roomName) || []) { const s = io.sockets.sockets.get(sid); if (s && s.vip) pushPresets(s); } };
+  socket.on('preset-save', ({ name } = {}) => {
+    if (!room || !socket.vip) return;
+    name = clean(name, 24).trim(); if (!name) return;
+    const meta = store.rooms[roomName] || (store.rooms[roomName] = { pw: null, owner: null, theme: {} });
+    meta.presets = meta.presets || {};
+    if (!meta.presets[name] && Object.keys(meta.presets).length >= 4) return socket.emit('pool-event', { text: 'Tối đa 4 bộ giao diện — hãy xoá bớt một bộ' });
+    meta.presets[name] = Object.assign({}, meta.theme || {}); saveStore(); pushPresetsAll();
+    socket.emit('pool-event', { text: `💾 Đã lưu bộ giao diện "${name}"` });
+  });
+  socket.on('preset-load', ({ name } = {}) => {
+    if (!room || !socket.vip) return;
+    const meta = store.rooms[roomName]; const pr = meta && meta.presets && meta.presets[clean(name, 24)];
+    if (!pr) return;
+    meta.theme = Object.assign({}, pr); saveStore();
+    for (const s of THEME_SLOTS) io.to(roomName).emit('theme', { slot: s, data: meta.theme[s] || null });
+    io.to(roomName).emit('pool-event', { text: `🎨 VIP đã đổi sang bộ giao diện "${clean(name, 24)}"` });
+  });
+  socket.on('preset-del', ({ name } = {}) => {
+    if (!room || !socket.vip) return;
+    const meta = store.rooms[roomName]; if (!meta || !meta.presets) return;
+    delete meta.presets[clean(name, 24)]; saveStore(); pushPresetsAll();
+  });
+
   socket.on('theme-set', ({ slot, data } = {}) => {
     if (!room || !socket.vip || !THEME_SLOTS.includes(slot)) return;
     if (data !== null && !(typeof data === 'string' && data.length <= 450000 && IMG_RE.test(data))) return;
@@ -408,7 +483,7 @@ io.on('connection', (socket) => {
     pw = String(pw || '').slice(0, 40);
     if (!pw) meta.pw = null; else { const salt = crypto.randomBytes(8).toString('hex'); meta.pw = { salt, hash: pwHash(pw, salt) }; }
     saveStore();
-    io.to(roomName).emit('room-info', { locked: !!meta.pw });
+    io.to(roomName).emit('room-info', { locked: !!meta.pw, videoLock: !!meta.videoLock });
     io.to(roomName).emit('pool-event', { text: meta.pw ? '🔒 Phòng đã được đặt mật khẩu' : '🔓 Phòng đã bỏ mật khẩu' });
   });
 
@@ -514,14 +589,18 @@ io.on('connection', (socket) => {
     io.to(roomName).emit('attack', { from: socket.id, to: target, type });
   });
 
+  const videoAllowed = () => socket.vip || !(store.rooms[roomName] && store.rooms[roomName].videoLock);
+  const denyVideo = () => { socket.emit('pool-event', { text: '🔒 Video đang được khoá — chỉ VIP mới điều khiển được' }); if (room) socket.emit('video', { ...currentVideo(room.video), load: false }); };
   socket.on('video-set', (id) => {
     if (!room) return;
+    if (!videoAllowed()) return denyVideo();
     room.video = { id: clean(id, 20), time: 0, playing: true, ts: Date.now() };
     io.to(roomName).emit('video', { ...currentVideo(room.video), by: room.players.get(socket.id)?.name, load: true });
   });
 
   socket.on('video-state', ({ playing, time }) => {
     if (!room) return;
+    if (!videoAllowed()) return denyVideo();
     room.video.playing = !!playing;
     room.video.time = +time || 0;
     room.video.ts = Date.now();

@@ -116,3 +116,14 @@ body.fs #scene { pointer-events: none; }
 .card-sec .sec { font-size: 15px; }
 .sec2 { font-weight: bold; color: #b9b4d6; font-size: 12px; margin-top: 2px; }
 #enter.primary { margin-top: 2px; }
+
+.msg.vip { background: rgba(90,60,0,.5); border-left: 3px solid #ffd34d; }
+.msg.vip b { color: #ffd34d; }
+.vip-banner { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 58; padding: 12px 26px; border-radius: 30px;
+  background: linear-gradient(90deg, #7a5200, #ffd34d, #7a5200); color: #2a1a00; font-weight: 800; font-size: 22px; box-shadow: 0 0 30px #ffd34d; animation: vipin 5s ease forwards; pointer-events: none; }
+@keyframes vipin { 0% { opacity: 0; transform: translate(-50%, -40px) scale(.7); } 10% { opacity: 1; transform: translate(-50%, 0) scale(1.08); } 16% { transform: translate(-50%, 0) scale(1); } 88% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -20px); } }
+#vipBar { position: fixed; right: 14px; bottom: 44px; z-index: 22; display: flex; gap: 6px; background: rgba(40,28,0,.55); border: 1px solid #c9a227; border-radius: 12px; padding: 6px; }
+#vipBar button { padding: 5px 9px; font-size: 18px; }
+#vipBar button.on { background: #b8860b; }
+.vip-check { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+.vip-sub { background: rgba(0,0,0,.25); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
