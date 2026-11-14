@@ -1894,6 +1894,9 @@ function loop(now) {
     g.rotation.y += d * Math.min(1, dt * 12);
     g.userData.animate(p.moving, dt);
     g.position.y = g.userData.bob || 0;
+    // chơi bi-a: ẩn người đứng quanh bàn + tên/bong bóng chat để không che tầm nhìn
+    g.visible = !(poolMode && Math.hypot(g.position.x - POOL_C.x, g.position.z - POOL_C.z) < 2.9);
+    p.label.visible = !poolMode; if (p.bubble) p.bubble.visible = !poolMode;
   }
   const tsec = now / 1000;
   updateGameVisuals(dt, now);
