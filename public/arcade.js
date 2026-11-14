@@ -1,7 +1,7 @@
 /* Máy game console: Tetris, Cờ cá ngựa, Bắn tank, Đua xe, Bomberman (canvas 2D; Cờ cá ngựa/Tank/Bomberman chơi online nhiều người) */
 const GAMES = [
   { id: 'tetris', icon: '🧱', name: 'Tetris', help: '← → hoặc A D: di chuyển · ↑ / W / X: xoay · Z: xoay ngược · ↓ / S: rơi nhanh · Space: thả xuống · Enter: chơi lại' },
-  { id: 'ludo', icon: '🐴', name: 'Cờ cá ngựa', help: 'Space/Enter: tung xúc xắc · click vào quân hoặc phím 1-4 để đi · cần ra 6 để xuất quân · 1 người đấu 3 máy hoặc chơi Online với bạn bè' },
+  { id: 'ludo', icon: '🐴', name: 'Cờ cá ngựa', help: 'Space/Enter: tung xúc xắc · click vào quân hoặc phím 1-4 để đi · cần ra 6 để xuất quân · không được nhảy qua đầu quân khác · 1 người đấu 3 máy hoặc chơi Online với bạn bè' },
   { id: 'tank', icon: '🛡️', name: 'Bắn tank', help: 'WASD / mũi tên: lái · Space: bắn · phá gạch, diệt hết xe địch · Online: co-op cùng bạn bè · Enter: chơi lại' },
   { id: 'racing', icon: '🏎️', name: 'Đua xe', help: '← → đánh lái · ↑ tăng tốc · ↓ phanh · tránh xe phía trước · Enter: chơi lại' },
   { id: 'bomber', icon: '💣', name: 'Bomberman', help: 'WASD / mũi tên: đi · Space: đặt bom · nổ gạch nhặt vật phẩm · 1 người: diệt hết kẻ địch · Online: đấu, sống sót cuối cùng thắng · Enter: chơi lại' },
@@ -121,12 +121,33 @@ function ludo(api, o = {}) {
     return [e[0] + homeDir[k][0] * (s + 1), e[1] + homeDir[k][1] * (s + 1)];
   };
   const px = (c) => [OX + (c[0] + 0.5) * CS, OY + (c[1] + 0.5) * CS];
-  const legal = (k, d) => {
+  // mỗi ô có 1 "khoá" để biết quân nào đang đứng đó (đường chung: theo vị trí vòng; đường về đích: riêng từng màu)
+  const cellKey = (k, p) => (p <= 38 ? 'r' + ((start[k] + p) % 40) : 'h' + k + '_' + p);
+  const occupiedBy = (key) => {
     const out = [];
-    pcs[k].forEach((p, i) => { if (p === -1) { if (d === 6) out.push(i); } else if (p + d <= 43) out.push(i); });
+    for (let o = 0; o < 4; o++) pcs[o].forEach((q, j) => { if (q >= 0 && cellKey(o, q) === key) out.push([o, j]); });
     return out;
   };
-  function nextTurn() {
+  // luật: KHÔNG được nhảy qua đầu quân khác (bất kể màu); không được đáp lên quân nhà (trừ ô đích cuối); đáp lên quân địch = đá về chuồng
+  const legal = (k, d) => {
+    const out = [];
+    pcs[k].forEach((p, i) => {
+      if (p === -1) {
+        if (d !== 6) return;
+        if (occupiedBy(cellKey(k, 0)).some(([o]) => o === k)) return;
+        out.push(i); return;
+      }
+      const np = p + d;
+      if (np > 43) return;
+      for (let s = p + 1; s <= np; s++) {
+        const occ = occupiedBy(cellKey(k, s));
+        if (s < np) { if (occ.length) return; }
+        else if (np !== 43 && occ.some(([o]) => o === k)) return;
+      }
+      out.push(i);
+    });
+    return out;
+  };  function nextTurn() {
     if (dice === 6 && sixes < 3) sixes++; else { turn = (turn + 1) % 4; sixes = 0; }
     phase = 'roll'; dice = 0; msg = `Lượt của ${label(turn)}`; botT = 0.9;
   }
@@ -229,11 +250,22 @@ function ludo(api, o = {}) {
         const n = stack[key] = (stack[key] || 0) + 1;
         let [cx, cy] = px(c); if (p >= 0) { cx += (n - 1) * 6; cy -= (n - 1) * 6; }
         const hl = k === mySlot && mvs.includes(i);
-        ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(cx, cy + 12, 12, 5, 0, 0, 7); ctx.fill();
-        ctx.fillStyle = COLORS[k]; ctx.strokeStyle = hl ? '#fff' : '#222'; ctx.lineWidth = hl ? 4 + Math.sin(performance.now() / 120) : 2;
-        ctx.beginPath(); ctx.arc(cx, cy, 14, 0, 7); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = '#fff'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        if (k === mySlot) ctx.fillText(String(i + 1), cx, cy + 1);
+        const bounce = hl ? Math.abs(Math.sin(performance.now() / 180)) * 5 : 0;
+        // bóng + đế
+        ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(cx, cy + 13, 13, 5, 0, 0, 7); ctx.fill();
+        ctx.fillStyle = COLORS[k]; ctx.strokeStyle = hl ? '#fff' : '#222'; ctx.lineWidth = hl ? 3 : 2;
+        ctx.beginPath(); ctx.ellipse(cx, cy + 10, 12, 5.5, 0, 0, 7); ctx.fill(); ctx.stroke();
+        // con ngựa ♞
+        ctx.font = '32px "Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Arial Unicode MS", sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.lineWidth = 3; ctx.strokeStyle = hl ? '#fff' : '#1a1a1a'; ctx.lineJoin = 'round';
+        ctx.strokeText('♞', cx, cy - 3 - bounce);
+        ctx.fillStyle = COLORS[k]; ctx.fillText('♞', cx, cy - 3 - bounce);
+        if (k === mySlot) { // số thứ tự quân để chọn bằng phím 1-4
+          ctx.fillStyle = '#fff'; ctx.strokeStyle = '#222'; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.arc(cx + 11, cy + 9, 7, 0, 7); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#111'; ctx.font = 'bold 10px sans-serif'; ctx.fillText(String(i + 1), cx + 11, cy + 10);
+        }
       });
       ctx.textBaseline = 'alphabetic';
       const dx = 560, dy = 70;
