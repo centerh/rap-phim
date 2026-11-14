@@ -366,6 +366,7 @@ function textSprite(text, { size = 48, bg = null, color = '#fff', maxW = 512 } =
 
 /* ---------------- Lobby / preview ---------------- */
 const look = { gender: 'male', hairStyle: 1, face: 'normal', jersey: '', skin: '#f2c394', hair: '#4a3020', shirt: '#2f6fe0', pants: '#2d3436', texture: null };
+try { Object.assign(look, JSON.parse(localStorage.getItem('cinema-look') || '{}')); } catch (e) {} // nhớ nhân vật lần trước
 function renderHairButtons() {
   $('hairStyles').innerHTML = HAIR_NAMES[look.gender].map((n, i) =>
     `<button type="button" data-h="${i + 1}" class="${look.hairStyle === i + 1 ? 'on' : ''}">${i + 1}. ${n}</button>`).join('');
@@ -375,6 +376,8 @@ function renderFaceButtons() {
     `<button type="button" data-f="${k}" title="${n}" class="${look.face === k ? 'on' : ''}"><span>${e}</span>${n}</button>`).join('');
 }
 renderHairButtons(); renderFaceButtons();
+document.querySelectorAll('#gender button').forEach((x) => x.classList.toggle('on', x.dataset.g === look.gender));
+$('pantsLabel').firstChild.textContent = look.gender === 'female' ? 'Váy ' : 'Quần ';
 $('hairStyles').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   look.hairStyle = +b.dataset.h; renderHairButtons(); rebuildPreview();
@@ -422,6 +425,7 @@ for (const k of ['skin', 'hair', 'shirt', 'pants']) {
   $(k).addEventListener('input', (e) => { look[k] = e.target.value; rebuildPreview(); });
 }
 const markJersey = () => document.querySelectorAll('#jerseys button').forEach((x) => x.classList.toggle('on', x.dataset.j === look.jersey && !look.texture));
+markJersey();
 $('jerseys').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
@@ -1206,6 +1210,7 @@ canvas.addEventListener('wheel', (e) => { camDist = Math.min(16, Math.max(3, cam
 $('enter').onclick = async () => {
   const name = $('name').value.trim() || 'Khách' + Math.floor(Math.random() * 1000);
   localStorage.setItem('cinema-name', name);
+  try { localStorage.setItem('cinema-look', JSON.stringify(look)); } catch (e) {}
   const room = ($('room').value.trim() || 'main').toLowerCase().replace(/[^\w-]/g, '') || 'main';
   currentRoom = room;
   try {
@@ -1926,6 +1931,14 @@ $('themeSlots').addEventListener('click', (e) => {
   inp.click();
 });
 socket.on('join-denied', () => { alert('Sai mật khẩu phòng!'); location.reload(); });
+
+// rời phòng -> quay về phòng chờ (màn hình tạo nhân vật + danh sách phòng) để vào phòng khác
+$('leaveBtn').onclick = () => {
+  if (!confirm('Rời khỏi phòng này và quay về phòng chờ?')) return;
+  try { leaveGames(); } catch (e) {}
+  socket.disconnect();
+  location.href = location.pathname;
+};
 
 /* ---------------- Main loop ---------------- */
 let last = 0, sendT = 0, lastSent = '';
