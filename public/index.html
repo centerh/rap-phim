@@ -18,9 +18,14 @@
     <div class="lobby-grid">
       <canvas id="preview" width="320" height="440"></canvas>
       <div class="form">
+        <div id="inviteBanner" class="card-sec invite-box hidden">
+          <div class="sec" id="inviteTitle">🎉 Bạn được mời vào phòng!</div>
+          <label>Nhập tên để vào ngay <input id="quickName" maxlength="20" placeholder="Nhập tên của bạn..." autocomplete="off"></label>
+          <button id="quickEnter" type="button" class="primary">⚡ Vào phòng ngay</button>
+        </div>
         <div class="card-sec">
           <div class="sec">🏠 Thiết lập phòng</div>
-          <label>Tên phòng <input id="room" maxlength="30" placeholder="vd: main, nhom-ban-than..." value="main" autocomplete="off"></label>
+          <label>Tên phòng (hoặc dán link mời) <input id="room" maxlength="200" placeholder="vd: main, nhom-ban-than, hoặc dán link mời..." value="main" autocomplete="off"></label>
           <label><span id="pwLabel">Mật khẩu phòng (không bắt buộc)</span> <input id="roomPw" type="password" maxlength="40" autocomplete="off" placeholder="Để trống = phòng công khai"></label>
           <div id="roomHint" class="muted"></div>
           <div class="sec2">Phòng đang mở <button id="roomRefresh" type="button" class="small">↻</button></div>
@@ -72,6 +77,7 @@
     <button id="ytGo">Phát</button>
     <button id="playBtn" title="Phát / Tạm dừng">⏯</button>
     <button id="leaveBtn" title="Rời phòng, về phòng chờ">🚪 Rời phòng</button>
+    <button id="inviteBtn" type="button" title="Sao chép link mời bạn bè vào thẳng phòng này">🔗 Mời</button>
     <button id="vipBtn" title="VIP & quản lý phòng">👑</button>
     <button id="micBtn" title="Giữ để nói (phím B) — tối đa 10 giây">🎤</button>
     <button id="voiceMute" title="Bật/tắt nghe voice của mọi người">🔊</button>
@@ -84,6 +90,7 @@
 <div id="playerPopup" class="hidden">
   <div id="playerPopupTitle"></div>
   <div id="playerPopupList"></div>
+  <button id="popupInviteBtn" type="button" class="popup-inv">🔗 Sao chép link mời vào phòng</button>
 </div>
 <div id="ytHolder"><div id="yt"></div></div>
 

@@ -22,7 +22,8 @@ app.post('/api/room-check', (req, res) => {
   const b = req.body || {};
   const name = String(b.room || '').slice(0, 30).replace(/[^\w-]/g, '').toLowerCase() || 'main';
   const meta = store.rooms[name];
-  res.json({ banned: isBanned(name, b.uid), ok: !isBanned(name, b.uid) && pwOk(meta, b.password, b.uid), exists: rooms.has(name) || !!(meta && meta.pw), locked: !!(meta && meta.pw) });
+  const banned = isBanned(name, b.uid);
+  res.json({ banned, ok: !banned && pwOk(meta, b.password, b.uid, b.inv), exists: rooms.has(name) || !!(meta && meta.pw), locked: !!(meta && meta.pw) });
 });
 
 /* ---------- Lưu trữ: mã VIP, mật khẩu phòng, giao diện phòng (data/meta.json, KHÔNG đưa lên git) ---------- */
@@ -59,9 +60,15 @@ function codeLevel(code) { // 0 = sai, 1 = VIP, 2 = admin
 }
 const listCodes = () => Object.entries(store.codes).map(([code, v]) => ({ code, label: v.label, created: v.created }));
 const pwHash = (pw, salt) => crypto.scryptSync(String(pw), salt, 32).toString('hex');
-function pwOk(meta, pw, uid) {
+function ensureInvite(meta) {
+  if (!meta) return '';
+  if (!meta.inv) { meta.inv = crypto.randomBytes(6).toString('hex'); saveStore(); }
+  return meta.inv;
+}
+function pwOk(meta, pw, uid, inv) {
   if (!meta || !meta.pw) return true;
   if (uid && meta.owner && meta.owner === uid) return true;
+  if (inv && meta.inv && safeEq(String(inv), meta.inv)) return true;
   try { return safeEq(pwHash(pw || '', meta.pw.salt), meta.pw.hash); } catch (e) { return false; }
 }
 const bans = {}; // tên phòng -> { uid: thời điểm hết hạn cấm }
@@ -272,7 +279,7 @@ io.on('connection', (socket) => {
     roomName = clean(r, 30).replace(/[^\w-]/g, '').toLowerCase() || 'main';
     const meta0 = store.rooms[roomName];
     if (isBanned(roomName, clean(data.uid, 40))) return socket.emit('join-denied', { reason: 'ban' });
-    if (!pwOk(meta0, data.password, clean(data.uid, 40))) return socket.emit('join-denied', { reason: 'pw' });
+    if (!pwOk(meta0, data.password, clean(data.uid, 40), clean(data.inv, 40))) return socket.emit('join-denied', { reason: 'pw' });
     if (!rooms.has(roomName) && !(meta0 && meta0.pw)) { store.rooms[roomName] = { pw: null, owner: clean(data.uid, 40) || null, theme: meta0 ? meta0.theme || {} : {} }; saveStore(); } // phòng mới (hoặc phòng trống không mật khẩu): người vào đầu là chủ phòng
     socket.data.uid = clean(data.uid, 40); socket.data.room = roomName;
     room = getRoom(roomName);
@@ -306,8 +313,9 @@ io.on('connection', (socket) => {
       x: (Math.random() - 0.5) * 6, z: 6, ry: 0,
     };
     room.players.set(socket.id, p);
+    const rMeta = store.rooms[roomName];
     socket.emit('init', { id: socket.id, players: [...room.players.values()], video: currentVideo(room.video), tables: room.tables, chat: room.chat, pool: { balls: poolPublic(room.pool), moving: room.pool.moving }, pp: ppPublic(room), clawState: room.claw.state, poolSeats: poolSeatsPublic(room), arcCounts: arcCounts(room),
-      theme: (store.rooms[roomName] || {}).theme || {}, videoLock: !!(store.rooms[roomName] && store.rooms[roomName].videoLock), locked: !!(store.rooms[roomName] && store.rooms[roomName].pw), isOwner: !!(store.rooms[roomName] && store.rooms[roomName].owner && store.rooms[roomName].owner === socket.data.uid) });
+      theme: (rMeta || {}).theme || {}, videoLock: !!(rMeta && rMeta.videoLock), locked: !!(rMeta && rMeta.pw), invite: rMeta && rMeta.pw ? ensureInvite(rMeta) : '', isOwner: !!(rMeta && rMeta.owner && rMeta.owner === socket.data.uid) });
     socket.to(roomName).emit('player-join', p);
     io.to(roomName).emit('count', room.players.size);
   });
@@ -481,9 +489,9 @@ io.on('connection', (socket) => {
     const meta = store.rooms[roomName] || (store.rooms[roomName] = { pw: null, owner: null, theme: {} });
     if (!(socket.vip || (meta.owner && meta.owner === socket.data.uid))) return socket.emit('pool-event', { text: 'Chỉ chủ phòng hoặc VIP mới đặt được mật khẩu' });
     pw = String(pw || '').slice(0, 40);
-    if (!pw) meta.pw = null; else { const salt = crypto.randomBytes(8).toString('hex'); meta.pw = { salt, hash: pwHash(pw, salt) }; }
+    if (!pw) { meta.pw = null; meta.inv = ''; } else { const salt = crypto.randomBytes(8).toString('hex'); meta.pw = { salt, hash: pwHash(pw, salt) }; meta.inv = crypto.randomBytes(6).toString('hex'); }
     saveStore();
-    io.to(roomName).emit('room-info', { locked: !!meta.pw, videoLock: !!meta.videoLock });
+    io.to(roomName).emit('room-info', { locked: !!meta.pw, videoLock: !!meta.videoLock, invite: meta.pw ? meta.inv : '' });
     io.to(roomName).emit('pool-event', { text: meta.pw ? '🔒 Phòng đã được đặt mật khẩu' : '🔓 Phòng đã bỏ mật khẩu' });
   });
 

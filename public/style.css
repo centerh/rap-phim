@@ -140,3 +140,10 @@ body.fs #scene { pointer-events: none; }
 .prow.vip .pnm { color: #ffd34d; font-weight: 600; }
 .prow .pyou { font-size: 11px; color: #9ad1ff; opacity: .85; }
 .prow button { padding: 3px 7px; font-size: 12px; }
+.popup-inv { margin-top: 8px; width: 100%; padding: 7px 10px; font-size: 13px; background: #2c4a3e; border: 1px solid #4cd964; color: #eafff0; }
+.popup-inv:hover { background: #386150; }
+#inviteBtn { background: #2c4a3e; border: 1px solid rgba(76,217,100,.45); }
+#inviteBtn:hover { background: #386150; }
+.invite-box { border-color: #ffd34d; background: rgba(90,65,10,.28); }
+#roomList button.quick { border-color: rgba(76,217,100,.4); }
+#roomList button.quick:hover { border-color: #4cd964; background: #29463a; }

@@ -3,7 +3,8 @@ import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { Arcade } from './arcade.js';
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-let currentRoom = 'main', lastCount = 1, pendingRoomPw = null, roomsCache = [];
+let currentRoom = 'main', lastCount = 1, pendingRoomPw = null, roomsCache = [], roomInvite = '', pendingInv = '', inviteRoom = '', entering = false;
+const cleanRoomName = (s) => String(s || '').trim().slice(0, 30).toLowerCase().replace(/[^\w-]/g, '') || 'main';
 const myUid = localStorage.getItem('cinema-uid') || (() => { const u = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('cinema-uid', u); return u; })();
 
 const $ = (id) => document.getElementById(id);
@@ -499,16 +500,50 @@ $('clearTex').onclick = () => { look.texture = null; look.jersey = ''; $('textur
 
 const savedName = localStorage.getItem('cinema-name');
 if (savedName) $('name').value = savedName;
-const qRoom = new URLSearchParams(location.search).get('room');
-if (qRoom) $('room').value = qRoom;
+const urlParams = new URLSearchParams(location.search);
+const qRoom = urlParams.get('room');
+const qInv = urlParams.get('inv') || '';
+const wantAutoJoin = urlParams.get('join') === '1' || !!qInv;
+if (qRoom) {
+  const cr = cleanRoomName(qRoom);
+  $('room').value = cr;
+  inviteRoom = cr;
+  if (qInv) { pendingInv = qInv; try { sessionStorage.setItem('cinema-inv-' + cr, qInv); } catch (e) {} }
+  try { history.replaceState(null, '', location.pathname + '?room=' + encodeURIComponent(cr)); } catch (e) {}
+}
+const getInvForRoom = (rn) => (inviteRoom === rn && pendingInv) || sessionStorage.getItem('cinema-inv-' + rn) || '';
+function extractInviteFromInput(raw) {
+  const s = String(raw || '').trim();
+  if (s.includes('room=') || /^https?:\/\//i.test(s)) {
+    try {
+      const u = new URL(s, location.origin);
+      const rn = u.searchParams.get('room');
+      const iv = u.searchParams.get('inv') || '';
+      if (rn) {
+        const cr = cleanRoomName(rn);
+        $('room').value = cr;
+        inviteRoom = cr;
+        if (iv) { pendingInv = iv; try { sessionStorage.setItem('cinema-inv-' + cr, iv); } catch (e) {} }
+        return { parsedUrl: true, room: cr };
+      }
+    } catch (e) {}
+  }
+  return { parsedUrl: false, room: cleanRoomName(s) };
+}
 
 // nút + gợi ý đổi theo việc phòng đã có hay chưa
 function updateRoomUi() {
-  const name = ($('room').value.trim() || 'main').toLowerCase().replace(/[^\w-]/g, '') || 'main';
+  const parsed = extractInviteFromInput($('room').value);
+  const name = parsed.room;
   const r = roomsCache.find((x) => x.name === name);
+  const hasInv = !!getInvForRoom(name);
   if (r) {
-    $('roomHint').textContent = `Phòng đang mở · ${r.players} người${r.locked ? ' · 🔒 cần mật khẩu' : ''}`;
-    $('pwLabel').textContent = r.locked ? 'Nhập mật khẩu để vào phòng' : 'Mật khẩu phòng (phòng này không cần)';
+    $('roomHint').textContent = `Phòng đang mở · ${r.players} người${r.locked ? (hasInv ? ' · ✅ đã mở khoá qua link mời' : ' · 🔒 cần mật khẩu') : ''}`;
+    $('pwLabel').textContent = r.locked ? (hasInv ? 'Mật khẩu phòng (link mời đã tự mở khoá)' : 'Nhập mật khẩu để vào phòng') : 'Mật khẩu phòng (phòng này không cần)';
+    $('enter').textContent = '🚪 Vào phòng';
+  } else if (hasInv) {
+    $('roomHint').textContent = `Link mời vào phòng "${name}" — bấm Vào phòng hoặc Enter để vào ngay`;
+    $('pwLabel').textContent = 'Mật khẩu phòng (không cần nếu dùng link mời)';
     $('enter').textContent = '🚪 Vào phòng';
   } else {
     $('roomHint').textContent = 'Phòng mới — bạn sẽ là chủ phòng. Để trống mật khẩu = phòng công khai.';
@@ -517,19 +552,32 @@ function updateRoomUi() {
   }
 }
 $('room').addEventListener('input', updateRoomUi);
-// danh sách phòng đang mở
+for (const id of ['room', 'roomPw', 'name']) {
+  $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('enter').click(); } });
+}
+// danh sách phòng đang mở (bấm 1 chạm để vào nhanh phòng công khai)
 function loadRooms() {
   fetch('/api/rooms').then((r) => r.json()).then((list) => {
     roomsCache = list; updateRoomUi();
     const box = $('roomList');
     box.innerHTML = list.length ? '' : '<span class="muted">Chưa có phòng nào đang mở — gõ tên phòng mới để tạo</span>';
     for (const r of list) {
+      const quick = !r.locked || !!getInvForRoom(r.name);
       const b = document.createElement('button'); b.type = 'button'; b.dataset.n = r.name;
-      b.textContent = `${r.locked ? '🔒 ' : ''}${r.name} · ${r.players} 👥`; box.appendChild(b);
+      if (quick) b.className = 'quick';
+      b.title = quick ? 'Bấm để vào ngay phòng ' + r.name : 'Phòng có mật khẩu — bấm để chọn';
+      b.textContent = `${r.locked ? '🔒 ' : '⚡ '}${r.name} · ${r.players} 👥`; box.appendChild(b);
     }
   }).catch(() => {});
 }
-$('roomList').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { $('room').value = b.dataset.n; updateRoomUi(); $('roomPw').focus(); } });
+$('roomList').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  $('room').value = b.dataset.n; updateRoomUi();
+  const r = roomsCache.find((x) => x.name === b.dataset.n);
+  if (!r || !r.locked || getInvForRoom(b.dataset.n)) $('enter').click();
+  else $('roomPw').focus();
+});
 $('roomRefresh').onclick = loadRooms;
 loadRooms();
 const roomTimer = setInterval(() => { if (!inLobby) clearInterval(roomTimer); else loadRooms(); }, 4000);
@@ -1080,8 +1128,10 @@ function showBubble(id, text) {  const p = players.get(id);
 }
 
 /* ---------------- Networking ---------------- */
-socket.on('init', ({ id, players: list, video, tables, chat, pool, pp, clawState, poolSeats: ps, arcCounts, theme, locked, isOwner: own, videoLock: vlock }) => {
-  roomLocked = !!locked; isOwner = !!own; videoLock = !!vlock;
+socket.on('init', ({ id, players: list, video, tables, chat, pool, pp, clawState, poolSeats: ps, arcCounts, theme, locked, invite, isOwner: own, videoLock: vlock }) => {
+  roomLocked = !!locked; isOwner = !!own; videoLock = !!vlock; roomInvite = invite || '';
+  if (roomInvite) { try { sessionStorage.setItem('cinema-inv-' + currentRoom, roomInvite); } catch (e) {} }
+  try { history.replaceState(null, '', location.pathname + '?room=' + encodeURIComponent(currentRoom)); } catch (e) {}
   setTimeout(afterVipChange, 0);
   if (pendingRoomPw && own) { socket.emit('room-pw-set', { pw: pendingRoomPw }); }
   pendingRoomPw = null;
@@ -1329,32 +1379,43 @@ canvas.addEventListener('wheel', (e) => { camDist = Math.min(16, Math.max(3, cam
 
 /* ---------------- Enter ---------------- */
 $('enter').onclick = async () => {
-  const name = $('name').value.trim() || 'Khách' + Math.floor(Math.random() * 1000);
-  localStorage.setItem('cinema-name', name);
-  try { localStorage.setItem('cinema-look', JSON.stringify(look)); } catch (e) {}
-  const room = ($('room').value.trim() || 'main').toLowerCase().replace(/[^\w-]/g, '') || 'main';
-  currentRoom = room;
-  const pw = $('roomPw').value;
+  if (entering || !inLobby) return;
+  entering = true;
   try {
-    const r = await fetch('/api/room-check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ room, password: $('roomPw').value, uid: myUid }) });
-    const j = await r.json();
-    if (j.banned) { $('lobbyErr').textContent = '🚫 Bạn đã bị mời ra khỏi phòng này — thử lại sau 10 phút'; return; }
-    if (!j.ok) { $('lobbyErr').textContent = '🔒 Phòng này có mật khẩu — hãy nhập đúng mật khẩu rồi bấm lại'; $('roomPw').focus(); return; }
-    pendingRoomPw = !j.exists && pw ? pw : null; // phòng mới + có nhập mật khẩu -> đặt mật khẩu cho phòng ngay khi tạo
-  } catch (e) { /* không kiểm tra được thì để máy chủ quyết định */ }
-  $('lobbyErr').textContent = '';
-  inLobby = false;
-  $('lobby').classList.add('hidden');
-  for (const id of ['screenPanel', 'chat', 'help', 'emoteBar']) $(id).classList.remove('hidden');
-  let cid = sessionStorage.getItem('cinema-cid');
-  if (!cid) { cid = Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem('cinema-cid', cid); }
-  socket.emit('join', { room, name, look, cid, uid: myUid, password: $('roomPw').value });
-  const savedVip = localStorage.getItem('cinema-vip');
-  if (savedVip) { lastCode = savedVip; socket.emit('vip-login', { code: savedVip }); }
-  try { ensureAudio(); } catch (e) {}
-  last = performance.now();
-  requestAnimationFrame(loop);
-  try { startYT(); } catch (err) { console.error(err); }
+    const name = $('name').value.trim() || 'Khách' + Math.floor(Math.random() * 1000);
+    localStorage.setItem('cinema-name', name);
+    try { localStorage.setItem('cinema-look', JSON.stringify(look)); } catch (e) {}
+    extractInviteFromInput($('room').value);
+    const room = cleanRoomName($('room').value);
+    currentRoom = room;
+    const pw = $('roomPw').value;
+    const inv = getInvForRoom(room);
+    try {
+      const r = await fetch('/api/room-check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ room, password: pw, uid: myUid, inv }) });
+      const j = await r.json();
+      if (j.banned) { $('lobbyErr').textContent = '🚫 Bạn đã bị mời ra khỏi phòng này — thử lại sau 10 phút'; return; }
+      if (!j.ok) {
+        if (inv) { try { sessionStorage.removeItem('cinema-inv-' + room); } catch (e) {} if (inviteRoom === room) pendingInv = ''; updateRoomUi(); }
+        $('lobbyErr').textContent = '🔒 Phòng này có mật khẩu — hãy nhập đúng mật khẩu rồi bấm lại'; $('roomPw').focus(); return;
+      }
+      pendingRoomPw = !j.exists && pw ? pw : null; // phòng mới + có nhập mật khẩu -> đặt mật khẩu cho phòng ngay khi tạo
+    } catch (e) { /* không kiểm tra được thì để máy chủ quyết định */ }
+    $('lobbyErr').textContent = '';
+    inLobby = false;
+    $('lobby').classList.add('hidden');
+    for (const id of ['screenPanel', 'chat', 'help', 'emoteBar']) $(id).classList.remove('hidden');
+    let cid = sessionStorage.getItem('cinema-cid');
+    if (!cid) { cid = Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem('cinema-cid', cid); }
+    socket.emit('join', { room, name, look, cid, uid: myUid, password: pw, inv });
+    const savedVip = localStorage.getItem('cinema-vip');
+    if (savedVip) { lastCode = savedVip; socket.emit('vip-login', { code: savedVip }); }
+    try { ensureAudio(); } catch (e) {}
+    last = performance.now();
+    requestAnimationFrame(loop);
+    try { startYT(); } catch (err) { console.error(err); }
+  } finally {
+    entering = false;
+  }
 };
 
 /* ---------------- Ngồi sofa & gọi món ---------------- */
@@ -2031,7 +2092,11 @@ socket.on('vip-codes', (list) => {
 });
 $('vipGen').onclick = () => { socket.emit('vip-gen', { label: $('vipLabel').value.trim() }); $('vipLabel').value = ''; };
 $('pwSet').onclick = () => { socket.emit('room-pw-set', { pw: $('pwNew').value }); $('pwNew').value = ''; };
-socket.on('room-info', (s) => { roomLocked = !!s.locked; videoLock = !!s.videoLock; afterVipChange(); if (vipOpen) refreshVipUi(); });
+socket.on('room-info', (s) => {
+  roomLocked = !!s.locked; videoLock = !!s.videoLock;
+  if ('invite' in s) { roomInvite = s.invite || ''; if (roomInvite) try { sessionStorage.setItem('cinema-inv-' + currentRoom, roomInvite); } catch (e) {} }
+  afterVipChange(); if (vipOpen) refreshVipUi();
+});
 socket.on('theme', ({ slot, data }) => { if (data) themeData[slot] = data; else delete themeData[slot]; applyTheme(slot, data); if (vipOpen) renderThemeSlots(); });
 $('themeResetAll').onclick = () => socket.emit('theme-reset-all');
 $('themeSlots').addEventListener('click', (e) => {
@@ -2319,4 +2384,51 @@ function loop(now) {
   }
   renderer.render(scene, camera);
   cssRenderer.render(scene, camera);
+}
+
+/* ---------------- Sao chép link mời & Đăng nhập phòng nhanh ---------------- */
+function fallbackCopy(text, cb) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); cb(); } catch (e) { prompt('Sao chép link mời vào phòng:', text); }
+  ta.remove();
+}
+function copyInviteLink(btn) {
+  const u = new URL(location.origin + location.pathname);
+  u.searchParams.set('room', currentRoom);
+  if (roomLocked && roomInvite) u.searchParams.set('inv', roomInvite);
+  u.searchParams.set('join', '1');
+  const link = u.toString();
+  const done = () => {
+    if (btn) {
+      const old = btn.dataset.orig || (btn.dataset.orig = btn.textContent);
+      btn.textContent = btn.id === 'inviteBtn' ? '✅ Đã chép!' : '✅ Đã sao chép link mời!';
+      clearTimeout(btn._t);
+      btn._t = setTimeout(() => { btn.textContent = old; }, 2200);
+    }
+    addChat('', `🔗 Đã sao chép link mời phòng "${currentRoom}" — gửi cho bạn bè để vào thẳng phòng nhé!`, true);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(link).then(done).catch(() => fallbackCopy(link, done));
+  } else fallbackCopy(link, done);
+}
+$('inviteBtn').onclick = () => copyInviteLink($('inviteBtn'));
+$('popupInviteBtn').onclick = () => copyInviteLink($('popupInviteBtn'));
+
+if (qRoom && wantAutoJoin) {
+  const targetRoom = cleanRoomName(qRoom);
+  if (savedName && savedName.trim()) {
+    $('enter').click();
+  } else {
+    $('inviteTitle').textContent = `🎉 Bạn được mời vào phòng "${targetRoom}"!`;
+    $('inviteBanner').classList.remove('hidden');
+    $('quickName').focus();
+    $('quickName').addEventListener('input', () => { $('name').value = $('quickName').value; });
+    $('quickName').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('quickEnter').click(); } });
+    $('quickEnter').onclick = () => {
+      if ($('quickName').value.trim()) $('name').value = $('quickName').value.trim();
+      $('enter').click();
+    };
+  }
 }
