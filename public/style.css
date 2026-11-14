@@ -111,3 +111,8 @@ body.fs #scene { pointer-events: none; }
 .vcode { display: flex; gap: 8px; align-items: center; background: rgba(0,0,0,.3); border-radius: 8px; padding: 6px 8px; font-size: 13px; }
 .vcode code { color: #ffd166; font-size: 14px; letter-spacing: 1px; }
 .vcode span { flex: 1; color: #aab; }
+
+.card-sec { background: rgba(255,255,255,.04); border: 1px solid #333355; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.card-sec .sec { font-size: 15px; }
+.sec2 { font-weight: bold; color: #b9b4d6; font-size: 12px; margin-top: 2px; }
+#enter.primary { margin-top: 2px; }

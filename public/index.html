@@ -18,41 +18,46 @@
     <div class="lobby-grid">
       <canvas id="preview" width="320" height="440"></canvas>
       <div class="form">
-        <div class="row2">
-          <label>Tên <input id="name" maxlength="20" placeholder="Nhập tên..."></label>
-          <label>Phòng <input id="room" maxlength="30" placeholder="main" value="main"></label>
+        <div class="card-sec">
+          <div class="sec">🏠 Thiết lập phòng</div>
+          <label>Tên phòng <input id="room" maxlength="30" placeholder="vd: main, nhom-ban-than..." value="main" autocomplete="off"></label>
+          <label><span id="pwLabel">Mật khẩu phòng (không bắt buộc)</span> <input id="roomPw" type="password" maxlength="40" autocomplete="off" placeholder="Để trống = phòng công khai"></label>
+          <div id="roomHint" class="muted"></div>
+          <div class="sec2">Phòng đang mở <button id="roomRefresh" type="button" class="small">↻</button></div>
+          <div id="roomList" class="chips"><span class="muted">Đang tải...</span></div>
+          <div id="lobbyErr" class="err"></div>
+          <button id="enter" class="primary">🎬 Tạo phòng &amp; vào rạp</button>
         </div>
-        <label>Mật khẩu phòng (nếu phòng có đặt) <input id="roomPw" type="password" maxlength="40" autocomplete="off"></label>
-        <div id="lobbyErr" class="err"></div>
-        <div class="sec">Phòng đang mở <button id="roomRefresh" type="button" class="small">↻</button></div>
-        <div id="roomList" class="chips"><span class="muted">Đang tải...</span></div>
-        <div class="sec">Giới tính</div>
-        <div id="gender">
-          <button type="button" data-g="male" class="on">👦 Nam</button>
-          <button type="button" data-g="female">👧 Nữ</button>
+        <div class="card-sec">
+          <div class="sec">🧍 Nhân vật của bạn</div>
+          <label>Tên của bạn <input id="name" maxlength="20" placeholder="Nhập tên..."></label>
+          <div class="sec2">Giới tính</div>
+          <div id="gender">
+            <button type="button" data-g="male" class="on">👦 Nam</button>
+            <button type="button" data-g="female">👧 Nữ</button>
+          </div>
+          <div class="sec2">Kiểu tóc</div>
+          <div id="hairStyles" class="chips"></div>
+          <div class="sec2">Biểu cảm khuôn mặt</div>
+          <div id="faces" class="chips faces"></div>
+          <div class="sec2">Màu sắc</div>
+          <div class="colors">
+            <label>Da <input type="color" id="skin" value="#f2c394"></label>
+            <label>Tóc <input type="color" id="hair" value="#4a3020"></label>
+            <label>Áo <input type="color" id="shirt" value="#2f6fe0"></label>
+            <label id="pantsLabel">Quần <input type="color" id="pants" value="#2d3436"></label>
+          </div>
+          <div class="sec2">Áo</div>
+          <div id="jerseys" class="chips">
+            <button type="button" data-j="" class="on">Áo trơn (màu)</button>
+            <button type="button" data-j="blg">⚪ Áo BLG</button>
+            <button type="button" data-j="geng">⚫ Áo GEN.G</button>
+          </div>
+          <label>Hoặc in ảnh của bạn lên áo
+            <input type="file" id="texture" accept="image/*">
+          </label>
+          <button id="clearTex" type="button" class="small">Xoá ảnh / áo đặc biệt</button>
         </div>
-        <div class="sec">Kiểu tóc</div>
-        <div id="hairStyles" class="chips"></div>
-        <div class="sec">Biểu cảm khuôn mặt</div>
-        <div id="faces" class="chips faces"></div>
-        <div class="sec">Màu sắc</div>
-        <div class="colors">
-          <label>Da <input type="color" id="skin" value="#f2c394"></label>
-          <label>Tóc <input type="color" id="hair" value="#4a3020"></label>
-          <label>Áo <input type="color" id="shirt" value="#2f6fe0"></label>
-          <label id="pantsLabel">Quần <input type="color" id="pants" value="#2d3436"></label>
-        </div>
-        <div class="sec">Áo</div>
-        <div id="jerseys" class="chips">
-          <button type="button" data-j="" class="on">Áo trơn (màu)</button>
-          <button type="button" data-j="blg">⚪ Áo BLG</button>
-          <button type="button" data-j="geng">⚫ Áo GEN.G</button>
-        </div>
-        <label>Hoặc in ảnh của bạn lên áo
-          <input type="file" id="texture" accept="image/*">
-        </label>
-        <button id="clearTex" type="button" class="small">Xoá ảnh / áo đặc biệt</button>
-        <button id="enter" class="primary">Vào rạp →</button>
       </div>
     </div>
   </div>
@@ -123,4 +128,3 @@
 <script type="module" src="app.js"></script>
 </body>
 </html>
-

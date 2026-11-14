@@ -21,7 +21,8 @@ app.get('/api/rooms', (req, res) => {
 app.post('/api/room-check', (req, res) => {
   const b = req.body || {};
   const name = String(b.room || '').slice(0, 30).replace(/[^\w-]/g, '').toLowerCase() || 'main';
-  res.json({ ok: pwOk(store.rooms[name], b.password, b.uid) });
+  const meta = store.rooms[name];
+  res.json({ ok: pwOk(meta, b.password, b.uid), exists: rooms.has(name) || !!(meta && meta.pw), locked: !!(meta && meta.pw) });
 });
 
 /* ---------- Lưu trữ: mã VIP, mật khẩu phòng, giao diện phòng (data/meta.json, KHÔNG đưa lên git) ---------- */
@@ -262,7 +263,7 @@ io.on('connection', (socket) => {
     roomName = clean(r, 30).replace(/[^\w-]/g, '').toLowerCase() || 'main';
     const meta0 = store.rooms[roomName];
     if (!pwOk(meta0, data.password, clean(data.uid, 40))) return socket.emit('join-denied', { reason: 'pw' });
-    if (!rooms.has(roomName) && !meta0) { store.rooms[roomName] = { pw: null, owner: clean(data.uid, 40) || null, theme: {} }; saveStore(); }
+    if (!rooms.has(roomName) && !(meta0 && meta0.pw)) { store.rooms[roomName] = { pw: null, owner: clean(data.uid, 40) || null, theme: meta0 ? meta0.theme || {} : {} }; saveStore(); } // phòng mới (hoặc phòng trống không mật khẩu): người vào đầu là chủ phòng
     socket.data.uid = clean(data.uid, 40);
     room = getRoom(roomName);
     // cùng 1 tab vào lại -> xoá nhân vật cũ

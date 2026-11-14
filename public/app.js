@@ -3,7 +3,7 @@ import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { Arcade } from './arcade.js';
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-let currentRoom = 'main', lastCount = 1;
+let currentRoom = 'main', lastCount = 1, pendingRoomPw = null, roomsCache = [];
 const myUid = localStorage.getItem('cinema-uid') || (() => { const u = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('cinema-uid', u); return u; })();
 
 const $ = (id) => document.getElementById(id);
@@ -459,9 +459,25 @@ if (savedName) $('name').value = savedName;
 const qRoom = new URLSearchParams(location.search).get('room');
 if (qRoom) $('room').value = qRoom;
 
+// nút + gợi ý đổi theo việc phòng đã có hay chưa
+function updateRoomUi() {
+  const name = ($('room').value.trim() || 'main').toLowerCase().replace(/[^\w-]/g, '') || 'main';
+  const r = roomsCache.find((x) => x.name === name);
+  if (r) {
+    $('roomHint').textContent = `Phòng đang mở · ${r.players} người${r.locked ? ' · 🔒 cần mật khẩu' : ''}`;
+    $('pwLabel').textContent = r.locked ? 'Nhập mật khẩu để vào phòng' : 'Mật khẩu phòng (phòng này không cần)';
+    $('enter').textContent = '🚪 Vào phòng';
+  } else {
+    $('roomHint').textContent = 'Phòng mới — bạn sẽ là chủ phòng. Để trống mật khẩu = phòng công khai.';
+    $('pwLabel').textContent = 'Đặt mật khẩu cho phòng (không bắt buộc)';
+    $('enter').textContent = '🎬 Tạo phòng & vào rạp';
+  }
+}
+$('room').addEventListener('input', updateRoomUi);
 // danh sách phòng đang mở
 function loadRooms() {
   fetch('/api/rooms').then((r) => r.json()).then((list) => {
+    roomsCache = list; updateRoomUi();
     const box = $('roomList');
     box.innerHTML = list.length ? '' : '<span class="muted">Chưa có phòng nào đang mở — gõ tên phòng mới để tạo</span>';
     for (const r of list) {
@@ -470,7 +486,7 @@ function loadRooms() {
     }
   }).catch(() => {});
 }
-$('roomList').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { $('room').value = b.dataset.n; $('roomPw').focus(); } });
+$('roomList').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { $('room').value = b.dataset.n; updateRoomUi(); $('roomPw').focus(); } });
 $('roomRefresh').onclick = loadRooms;
 loadRooms();
 const roomTimer = setInterval(() => { if (!inLobby) clearInterval(roomTimer); else loadRooms(); }, 4000);
@@ -1020,6 +1036,8 @@ function showBubble(id, text) {  const p = players.get(id);
 /* ---------------- Networking ---------------- */
 socket.on('init', ({ id, players: list, video, tables, chat, pool, pp, clawState, poolSeats: ps, arcCounts, theme, locked, isOwner: own }) => {
   roomLocked = !!locked; isOwner = !!own;
+  if (pendingRoomPw && own) { socket.emit('room-pw-set', { pw: pendingRoomPw }); }
+  pendingRoomPw = null;
   for (const [slot, data] of Object.entries(theme || {})) { themeData[slot] = data; applyTheme(slot, data); }
   if (ps) poolSeats = ps;
   if (arcCounts) Arcade.setCounts(arcCounts);
@@ -1213,10 +1231,12 @@ $('enter').onclick = async () => {
   try { localStorage.setItem('cinema-look', JSON.stringify(look)); } catch (e) {}
   const room = ($('room').value.trim() || 'main').toLowerCase().replace(/[^\w-]/g, '') || 'main';
   currentRoom = room;
+  const pw = $('roomPw').value;
   try {
     const r = await fetch('/api/room-check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ room, password: $('roomPw').value, uid: myUid }) });
     const j = await r.json();
     if (!j.ok) { $('lobbyErr').textContent = '🔒 Phòng này có mật khẩu — hãy nhập đúng mật khẩu rồi bấm lại'; $('roomPw').focus(); return; }
+    pendingRoomPw = !j.exists && pw ? pw : null; // phòng mới + có nhập mật khẩu -> đặt mật khẩu cho phòng ngay khi tạo
   } catch (e) { /* không kiểm tra được thì để máy chủ quyết định */ }
   $('lobbyErr').textContent = '';
   inLobby = false;
